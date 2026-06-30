@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"log"
 	"net/http"
 
@@ -10,12 +11,15 @@ import (
 )
 
 func main() {
+	address := flag.String("a", "localhost:8080", "адрес эндпоинта HTTP-сервера")
+	flag.Parse()
+
 	modelStorage := models.NewStorage()
 	service := service.NewMetricService(modelStorage)
 
 	router := router.NewRouter(service)
 
-	err := http.ListenAndServe(":8080", router)
+	err := http.ListenAndServe(*address, router)
 	if err != nil {
 		log.Fatalf("Ошибка запуска сервера: %s\n", err)
 	}

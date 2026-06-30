@@ -5,6 +5,8 @@ import (
 	"math/rand/v2"
 	"sync"
 	"time"
+
+	"github.com/mersikovs/korob.git/internal/config"
 )
 
 const DefaultPollInterval = 2
@@ -12,27 +14,18 @@ const DefaultReportInterval = 10
 const NameRandomField = "randomValue"
 
 type Agent struct {
-	lastMetrics    map[string]string
-	pollCount      int
-	pollInterval   int
-	reportInterval int
-	mu             sync.Mutex
+	lastMetrics map[string]string
+	pollCount   int
+	cnf         *config.Config
+	mu          sync.Mutex
 }
 
-func NewAgent(pollInterval, reportInterval int) *Agent {
-
-	if pollInterval <= DefaultPollInterval {
-		pollInterval = DefaultPollInterval
-	}
-	if reportInterval <= DefaultReportInterval {
-		reportInterval = DefaultReportInterval
-	}
+func NewAgent(cnf *config.Config) *Agent {
 
 	return &Agent{
-		pollInterval:   pollInterval,
-		reportInterval: reportInterval,
-		lastMetrics:    make(map[string]string),
-		pollCount:      0,
+		cnf:         cnf,
+		lastMetrics: make(map[string]string),
+		pollCount:   0,
 	}
 }
 
@@ -49,21 +42,23 @@ func (a *Agent) GetMetrics() {
 		a.lastMetrics = metrics
 		metrics[NameRandomField] = fmt.Sprintf("%v", rand.Float64())
 		a.mu.Unlock()
-		time.Sleep(time.Duration(a.pollInterval) * time.Second)
+		time.Sleep(time.Duration(a.cnf.PollInterval) * time.Second)
 	}
 }
 
 func (a *Agent) SendMetrics() {
 	for {
-		time.Sleep(time.Duration(a.reportInterval) * time.Second)
+		time.Sleep(time.Duration(a.cnf.ReportInterval) * time.Second)
 		a.mu.Lock()
 		if len(a.lastMetrics) > 0 {
-			err := PostMetrics("http://localhost:8080/update", a.lastMetrics, "gauge")
+			url := fmt.Sprintf("http://%s/update", a.cnf.Address)
+
+			err := PostMetrics(url, a.lastMetrics, "gauge")
 			if err != nil {
 				fmt.Println("Ошибка отправки метрик:", err)
 			}
 
-			err = PostMetrics("http://localhost:8080/update", map[string]string{"pollCount": fmt.Sprintf("%v", a.pollCount)}, "counter")
+			err = PostMetrics(url, map[string]string{"pollCount": fmt.Sprintf("%v", a.pollCount)}, "counter")
 			if err != nil {
 				fmt.Println("Ошибка отправки счетчика:", err)
 			}

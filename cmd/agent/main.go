@@ -7,11 +7,17 @@ import (
 	"syscall"
 
 	"github.com/mersikovs/korob.git/internal/agent"
+	"github.com/mersikovs/korob.git/internal/config"
 )
 
 func main() {
+	cnf, err := config.Parse()
+	if err != nil {
+		fmt.Println("Ошибка парсинга параметров")
+		return
+	}
 
-	agent := agent.NewAgent(2, 10)
+	agent := agent.NewAgent(cnf)
 	agent.Run()
 	fmt.Println("Работаю... Нажми Ctrl+C для завершения")
 
