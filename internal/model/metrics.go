@@ -1,5 +1,7 @@
 package models
 
+import "slices"
+
 const (
 	Counter = "counter"
 	Gauge   = "gauge"
@@ -11,6 +13,7 @@ type MemoryStorage struct {
 
 type Storage interface {
 	Get(mType, name string) (*Metrics, error)
+	GetNamesList() []string
 	Save(mType, name string, m Metrics) error
 	Delete(mType, name string) error
 }
@@ -42,6 +45,17 @@ func NewStorage() *MemoryStorage {
 	return &MemoryStorage{
 		Metrics: make(map[string]map[string]Metrics),
 	}
+}
+
+func (s *MemoryStorage) GetNamesList() []string {
+	list := make([]string, 0)
+	for _, mNames := range s.Metrics {
+		for name := range mNames {
+			list = append(list, name)
+		}
+	}
+	slices.Sort(list)
+	return list
 }
 
 func (s *MemoryStorage) Get(mType, name string) (*Metrics, error) {

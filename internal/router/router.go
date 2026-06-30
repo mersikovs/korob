@@ -11,9 +11,9 @@ func NewRouter(service *service.MetricService) *chi.Mux {
 
 	metricHandler := handler.NewMetricHandler(service)
 
-	r.Route("/update", func(r chi.Router) {
-		r.Post("/{type}/{name}/{value}", metricHandler.UpdateMetric)
-	})
+	r.Get("/", metricHandler.ListMetrics)
+	r.Get("/value/{type}/{name}", metricHandler.GetMetric)
+	r.Post("/update/{type}/{name}/{value}", metricHandler.UpdateMetric)
 
 	return r
 }

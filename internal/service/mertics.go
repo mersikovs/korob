@@ -15,6 +15,33 @@ func NewMetricService(repo models.Storage) *MetricService {
 	return &MetricService{repo: repo}
 }
 
+func (m *MetricService) GetMetric(metricType, metricName string) (string, error) {
+	metric, err := m.repo.Get(metricType, metricName)
+	if err != nil {
+		return "", err
+	}
+	if metric == nil {
+		return "", fmt.Errorf("неизвестная метрика %s", metricName)
+	}
+
+	switch metricType {
+	case models.Counter:
+		if metric.Delta == nil {
+			return "", fmt.Errorf("не установлено значение %s %s", metricType, metricName)
+		}
+
+		return fmt.Sprintf("%d", *metric.Delta), nil
+	case models.Gauge:
+		if metric.Value == nil {
+			return "", fmt.Errorf("не установлено значение %s %s", metricType, metricName)
+		}
+
+		return strconv.FormatFloat(*metric.Value, 'f', -1, 64), nil
+	}
+
+	return "", fmt.Errorf("неизвестный тип метрики %s", metricType)
+}
+
 func (m *MetricService) UpdateMetric(metricType, metricName, metricValue string) error {
 
 	switch metricType {
@@ -57,4 +84,8 @@ func (m *MetricService) UpdateMetric(metricType, metricName, metricValue string)
 	}
 
 	return fmt.Errorf("неизвестный тип метрики %s", metricType)
+}
+
+func (m *MetricService) ListMetrics() []string {
+	return m.repo.GetNamesList()
 }
