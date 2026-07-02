@@ -68,14 +68,29 @@ func GetCountDiff(oldMetrics, newMetrics map[string]string) int {
 }
 
 func PostMetrics(baseURL string, metrics map[string]string, metricType string) error {
+	var errs []error
 	for k, v := range metrics {
 		url := fmt.Sprintf("%s/%s/%s/%s", baseURL, metricType, k, v)
 		resp, err := http.Post(url, "text/plain", nil)
-		if err != nil || resp.StatusCode != 200 {
-			fmt.Println(resp, err)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("ошибка отправки метрики %s: %v", k, err))
+			time.Sleep(time.Duration(1) * time.Second)
+			continue
+		}
+		if resp.StatusCode != 200 {
+			errs = append(errs, fmt.Errorf("ошибка отправки метрики %s: %v", k, resp.Status))
+		}
+		if resp.Body != nil {
+			err := resp.Body.Close()
+			if err != nil {
+				errs = append(errs, fmt.Errorf("ошибка закрытия тела ответа для метрики %s: %v", k, err))
+			}
 		}
 		time.Sleep(time.Duration(1) * time.Second)
 	}
 
+	if len(errs) > 0 {
+		return fmt.Errorf("ошибки отправки метрик: %v", errs)
+	}
 	return nil
 }

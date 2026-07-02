@@ -17,11 +17,10 @@ type Agent struct {
 	lastMetrics map[string]string
 	pollCount   int
 	cnf         *config.Config
-	mu          sync.Mutex
+	mu          sync.RWMutex
 }
 
 func NewAgent(cnf *config.Config) *Agent {
-
 	return &Agent{
 		cnf:         cnf,
 		lastMetrics: make(map[string]string),
@@ -30,39 +29,54 @@ func NewAgent(cnf *config.Config) *Agent {
 }
 
 func (a *Agent) Run() {
-	go a.GetMetrics()
-	go a.SendMetrics()
+	go a.getMetricsFromRuntime()
+	go a.sendRuntimeMetrics()
 }
 
-func (a *Agent) GetMetrics() {
+func (a *Agent) saveMetrics(metrics map[string]string, pollCount int) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.lastMetrics = metrics
+	a.pollCount = pollCount
+}
+
+func (a *Agent) getSavedMetrics() (map[string]string, int) {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	return a.lastMetrics, a.pollCount
+}
+
+func (a *Agent) getMetricsFromRuntime() {
 	for {
-		a.mu.Lock()
+
 		metrics := GetRuntimeMetrics()
-		a.pollCount = GetCountDiff(a.lastMetrics, metrics)
-		a.lastMetrics = metrics
+		lastMetrics, _ := a.getSavedMetrics()
+		pollCount := GetCountDiff(lastMetrics, metrics)
+		a.saveMetrics(metrics, pollCount)
 		metrics[NameRandomField] = fmt.Sprintf("%v", rand.Float64())
-		a.mu.Unlock()
+
 		time.Sleep(time.Duration(a.cnf.PollInterval) * time.Second)
 	}
 }
 
-func (a *Agent) SendMetrics() {
+func (a *Agent) sendRuntimeMetrics() {
 	for {
 		time.Sleep(time.Duration(a.cnf.ReportInterval) * time.Second)
-		a.mu.Lock()
-		if len(a.lastMetrics) > 0 {
+		lastMetrics, pollCount := a.getSavedMetrics()
+
+		if len(lastMetrics) > 0 {
 			url := fmt.Sprintf("http://%s/update", a.cnf.Address)
 
-			err := PostMetrics(url, a.lastMetrics, "gauge")
+			err := PostMetrics(url, lastMetrics, "gauge")
 			if err != nil {
-				fmt.Println("Ошибка отправки метрик:", err)
+				fmt.Println("Произошли ошибки при отправке метрик:", err)
 			}
 
-			err = PostMetrics(url, map[string]string{"pollCount": fmt.Sprintf("%v", a.pollCount)}, "counter")
+			err = PostMetrics(url, map[string]string{"pollCount": fmt.Sprintf("%v", pollCount)}, "counter")
 			if err != nil {
-				fmt.Println("Ошибка отправки счетчика:", err)
+				fmt.Println("Произошли ошибки при отправке метрик:", err)
 			}
 		}
-		a.mu.Unlock()
+
 	}
 }

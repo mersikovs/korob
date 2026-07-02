@@ -18,9 +18,6 @@ func NewMetricService(repo models.Storage) *MetricService {
 func (m *MetricService) GetMetric(metricType, metricName string) (string, error) {
 	metric, err := m.repo.Get(metricType, metricName)
 	if err != nil {
-		return "", err
-	}
-	if metric == nil {
 		return "", fmt.Errorf("неизвестная метрика %s", metricName)
 	}
 
@@ -53,19 +50,23 @@ func (m *MetricService) UpdateMetric(metricType, metricName, metricValue string)
 
 		metric, err := m.repo.Get(metricType, metricName)
 		if err != nil {
-			fmt.Printf("error")
+			return fmt.Errorf("ошибка при получении метрики %s: %v", metricName, err)
 		}
 
-		if err == nil && metric != nil && metric.Delta != nil {
+		if metric.Delta != nil {
 			counter += *metric.Delta
 		}
 
-		m.repo.Save(metricType, metricName, models.Metrics{
+		err = m.repo.Save(metricType, metricName, models.Metrics{
 			ID:    metricName,
 			MType: metricType,
 			Delta: &counter,
 			Value: nil,
 		})
+
+		if err != nil {
+			return fmt.Errorf("ошибка при сохранении метрики %s: %v", metricName, err)
+		}
 
 		return nil
 	case models.Gauge:
@@ -74,12 +75,17 @@ func (m *MetricService) UpdateMetric(metricType, metricName, metricValue string)
 			return fmt.Errorf("ошибка при обновлении метрики %s: %v", metricName, err)
 		}
 
-		m.repo.Save(metricType, metricName, models.Metrics{
+		err = m.repo.Save(metricType, metricName, models.Metrics{
 			ID:    metricName,
 			MType: metricType,
 			Delta: nil,
 			Value: &gauge,
 		})
+
+		if err != nil {
+			return fmt.Errorf("ошибка при сохранении метрики %s: %v", metricName, err)
+		}
+
 		return nil
 	}
 

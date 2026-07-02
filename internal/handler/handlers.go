@@ -65,7 +65,10 @@ func (h *MetricHandler) ListMetrics(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
-	w.Write([]byte(html))
+	_, err := w.Write([]byte(html))
+	if err != nil {
+		fmt.Printf("ошибка записи ответа: %v", err)
+	}
 }
 
 func (h *MetricHandler) GetMetric(w http.ResponseWriter, r *http.Request) {
@@ -85,5 +88,8 @@ func (h *MetricHandler) GetMetric(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
-	w.Write([]byte(value))
+	_, err := w.Write([]byte(value))
+	if err != nil {
+		fmt.Printf("ошибка записи ответа: %v", err)
+	}
 }

@@ -1,6 +1,9 @@
 package models
 
-import "slices"
+import (
+	"slices"
+	"sync"
+)
 
 const (
 	Counter = "counter"
@@ -8,14 +11,14 @@ const (
 )
 
 type MemoryStorage struct {
+	mu      sync.RWMutex
 	Metrics map[string]map[string]Metrics
 }
 
 type Storage interface {
-	Get(mType, name string) (*Metrics, error)
+	Get(mType, name string) (Metrics, error)
 	GetNamesList() []string
 	Save(mType, name string, m Metrics) error
-	Delete(mType, name string) error
 }
 
 var ValidMetricTypes = map[string]struct{}{
@@ -48,49 +51,44 @@ func NewStorage() *MemoryStorage {
 }
 
 func (s *MemoryStorage) GetNamesList() []string {
+	s.mu.RLock()
+
 	list := make([]string, 0)
 	for _, mNames := range s.Metrics {
 		for name := range mNames {
 			list = append(list, name)
 		}
 	}
+
+	s.mu.RUnlock()
+
 	slices.Sort(list)
 	return list
 }
 
-func (s *MemoryStorage) Get(mType, name string) (*Metrics, error) {
-	if _, ok := s.Metrics[mType]; !ok {
-		return nil, nil
+func (s *MemoryStorage) Get(mType, name string) (Metrics, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	typeMap, ok := s.Metrics[mType]
+	if !ok {
+		return Metrics{}, nil
 	}
 
-	metric, ok := s.Metrics[mType][name]
+	metric, ok := typeMap[name]
 	if !ok {
-		return nil, nil
+		return Metrics{}, nil
 	}
-	return &metric, nil
+	return metric, nil
 }
 
 func (s *MemoryStorage) Save(mType, name string, m Metrics) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	if _, ok := s.Metrics[mType]; !ok {
 		s.Metrics[mType] = make(map[string]Metrics)
 	}
 
 	s.Metrics[mType][name] = m
-
-	return nil
-}
-
-func (s *MemoryStorage) Delete(mType, name string) error {
-	if _, ok := s.Metrics[mType]; !ok {
-		return nil
-	}
-
-	_, ok := s.Metrics[mType][name]
-	if !ok {
-		return nil
-	}
-
-	delete(s.Metrics[mType], name)
 
 	return nil
 }
