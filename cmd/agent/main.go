@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"os"
 	"os/signal"
@@ -11,7 +12,8 @@ import (
 )
 
 func main() {
-	cnf, err := config.Parse()
+	fs := flag.NewFlagSet("agent", flag.ContinueOnError)
+	cnf, err := config.Parse(fs, os.Args[1:], config.OSenv{})
 	if err != nil {
 		fmt.Println("Ошибка парсинга параметров")
 		return

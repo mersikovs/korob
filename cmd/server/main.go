@@ -4,6 +4,7 @@ import (
 	"flag"
 	"log"
 	"net/http"
+	"os"
 
 	models "github.com/mersikovs/korob.git/internal/model"
 	"github.com/mersikovs/korob.git/internal/router"
@@ -13,6 +14,10 @@ import (
 func main() {
 	address := flag.String("a", "localhost:8080", "адрес эндпоинта HTTP-сервера")
 	flag.Parse()
+
+	if addr, exists := os.LookupEnv("ADDRESS"); exists && addr != "" {
+		*address = addr
+	}
 
 	modelStorage := models.NewStorage()
 	service := service.NewMetricService(modelStorage)
