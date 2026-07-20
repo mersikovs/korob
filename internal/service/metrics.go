@@ -4,15 +4,20 @@ import (
 	"fmt"
 	"strconv"
 
+	"github.com/mersikovs/korob.git/internal/logger"
 	models "github.com/mersikovs/korob.git/internal/model"
 )
 
 type MetricService struct {
-	repo models.Storage
+	repo   models.Storage
+	Logger logger.Logger
 }
 
-func NewMetricService(repo models.Storage) *MetricService {
-	return &MetricService{repo: repo}
+func NewMetricService(repo models.Storage, log logger.Logger) *MetricService {
+	return &MetricService{
+		repo:   repo,
+		Logger: log,
+	}
 }
 
 func (m *MetricService) GetMetric(metricType, metricName string) (string, error) {

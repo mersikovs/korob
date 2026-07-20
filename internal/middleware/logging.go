@@ -1,0 +1,47 @@
+package middleware
+
+import (
+	"net/http"
+	"time"
+
+	"github.com/mersikovs/korob.git/internal/logger"
+)
+
+type responseRecorder struct {
+	http.ResponseWriter
+	status int
+	size   int
+}
+
+func (rr *responseRecorder) WriteHeader(code int) {
+	rr.status = code
+	rr.ResponseWriter.WriteHeader(code)
+}
+
+func (rr *responseRecorder) Write(b []byte) (int, error) {
+	n, err := rr.ResponseWriter.Write(b)
+	rr.size += n
+	return n, err
+}
+
+func (rr *responseRecorder) Size() int {
+	return rr.size
+}
+
+func Logger(log logger.Logger) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			start := time.Now()
+			rr := &responseRecorder{ResponseWriter: w}
+			next.ServeHTTP(rr, r)
+			log.Info(
+				"server",
+				"req.method", r.Method,
+				"req.uri", r.RequestURI,
+				"req.duration", time.Since(start),
+				"res.status", rr.status,
+				"res.size", rr.Size(),
+			)
+		})
+	}
+}

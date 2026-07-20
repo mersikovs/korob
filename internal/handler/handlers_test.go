@@ -5,6 +5,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/mersikovs/korob.git/internal/logger"
 	models "github.com/mersikovs/korob.git/internal/model"
 	"github.com/mersikovs/korob.git/internal/router"
 	"github.com/mersikovs/korob.git/internal/service"
@@ -13,7 +14,11 @@ import (
 
 func TestUpdateMetric(t *testing.T) {
 	modelStorage := models.NewStorage()
-	service := service.NewMetricService(modelStorage)
+	logger, err := logger.NewZap("debug")
+	if err != nil {
+		logger.Fatal("Ошибка создания логгера:", err)
+	}
+	service := service.NewMetricService(modelStorage, logger)
 	router := router.NewRouter(service)
 
 	type want struct {
