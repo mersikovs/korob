@@ -13,6 +13,8 @@ func NewRouter(service *service.MetricService) *chi.Mux {
 	metricHandler := handler.NewMetricHandler(service)
 
 	r.Use(middleware.Logger(service.Logger))
+	r.Use(middleware.GzipResponseMiddleware)
+	r.Use(middleware.GzipRequestMiddleware)
 
 	r.Get("/", metricHandler.ListMetrics)
 	r.Get("/value/{type}/{name}", metricHandler.GetMetricByUrlParam)

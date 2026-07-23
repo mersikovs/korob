@@ -2,6 +2,7 @@ package agent
 
 import (
 	"bytes"
+	"compress/gzip"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -169,7 +170,21 @@ func PostMetricsJson(baseURL string, metrics map[string]models.Metrics) error {
 			continue
 		}
 
-		resp, err := http.Post(url, "application/json", bytes.NewBuffer(jsonData))
+		var buf bytes.Buffer
+		gz := gzip.NewWriter(&buf)
+		gz.Write(jsonData)
+		gz.Close()
+
+		req, err := http.NewRequest("POST", url, &buf)
+		if err != nil {
+			return err
+		}
+
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Content-Encoding", "gzip")
+		req.Header.Set("Accept-Encoding", "gzip")
+
+		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
 			errs = append(errs, fmt.Errorf("ошибка отправки метрики %s: %v", v.ID, err))
 			time.Sleep(time.Duration(10) * time.Millisecond)
