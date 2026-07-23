@@ -9,16 +9,24 @@ import (
 
 type responseRecorder struct {
 	http.ResponseWriter
-	status int
-	size   int
+	status  int
+	size    int
+	written bool
 }
 
 func (rr *responseRecorder) WriteHeader(code int) {
+	if rr.written {
+		return
+	}
 	rr.status = code
+	rr.written = true
 	rr.ResponseWriter.WriteHeader(code)
 }
 
 func (rr *responseRecorder) Write(b []byte) (int, error) {
+	if rr.status == 0 {
+		rr.WriteHeader(http.StatusOK)
+	}
 	n, err := rr.ResponseWriter.Write(b)
 	rr.size += n
 	return n, err
@@ -38,7 +46,7 @@ func Logger(log logger.Logger) func(http.Handler) http.Handler {
 				"server",
 				"req.method", r.Method,
 				"req.uri", r.RequestURI,
-				"req.duration", time.Since(start),
+				"req.duration", time.Since(start).Seconds(),
 				"res.status", rr.status,
 				"res.size", rr.Size(),
 			)

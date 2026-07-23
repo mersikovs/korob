@@ -97,6 +97,57 @@ func (m *MetricService) UpdateMetric(metricType, metricName, metricValue string)
 	return fmt.Errorf("неизвестный тип метрики %s", metricType)
 }
 
+func (m *MetricService) UpdateMetricFromStruct(metricType, metricName string, metricValue models.Metrics) error {
+
+	switch metricType {
+	case models.Counter:
+
+		if metricValue.Delta == nil {
+			return fmt.Errorf("ошибка при обновлении метрики %s", metricName)
+		}
+
+		metric, err := m.repo.Get(metricType, metricName)
+		if err != nil {
+			return fmt.Errorf("ошибка при получении метрики %s: %v", metricName, err)
+		}
+
+		var counter int64
+		if metric.Delta != nil {
+			counter = counter + *metric.Delta
+		}
+		if metricValue.Delta != nil {
+			counter = counter + *metricValue.Delta
+		}
+
+		err = m.repo.Save(metricType, metricName, models.Metrics{
+			ID:    metricName,
+			MType: metricType,
+			Delta: &counter,
+		})
+
+		if err != nil {
+			return fmt.Errorf("ошибка при сохранении метрики %s: %v", metricName, err)
+		}
+
+		return nil
+	case models.Gauge:
+
+		err := m.repo.Save(metricType, metricName, models.Metrics{
+			ID:    metricName,
+			MType: metricType,
+			Value: metricValue.Value,
+		})
+
+		if err != nil {
+			return fmt.Errorf("ошибка при сохранении метрики %s: %v", metricName, err)
+		}
+
+		return nil
+	}
+
+	return fmt.Errorf("неизвестный тип метрики %s", metricType)
+}
+
 func (m *MetricService) ListMetrics() []string {
 	return m.repo.GetNamesList()
 }

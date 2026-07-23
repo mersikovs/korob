@@ -15,8 +15,10 @@ func NewRouter(service *service.MetricService) *chi.Mux {
 	r.Use(middleware.Logger(service.Logger))
 
 	r.Get("/", metricHandler.ListMetrics)
-	r.Get("/value/{type}/{name}", metricHandler.GetMetric)
-	r.Post("/update/{type}/{name}/{value}", metricHandler.UpdateMetric)
+	r.Get("/value/{type}/{name}", metricHandler.GetMetricByUrlParam)
+	r.Post("/value/", metricHandler.GetMetricByJSONParam)
+	r.Post("/update/", metricHandler.UpdateMetricByJSONParam)
+	r.Post("/update/{type}/{name}/{value}", metricHandler.UpdateMetricByParam)
 
 	return r
 }

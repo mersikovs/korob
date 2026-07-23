@@ -7,14 +7,15 @@ import (
 	"time"
 
 	"github.com/mersikovs/korob.git/internal/config"
+	models "github.com/mersikovs/korob.git/internal/model"
 )
 
 const DefaultPollInterval = 2
 const DefaultReportInterval = 10
-const NameRandomField = "randomValue"
+const NameRandomField = "RandomValue"
 
 type Agent struct {
-	lastMetrics map[string]string
+	lastMetrics map[string]models.Metrics
 	pollCount   int
 	cnf         *config.Config
 	mu          sync.RWMutex
@@ -23,7 +24,7 @@ type Agent struct {
 func NewAgent(cnf *config.Config) *Agent {
 	return &Agent{
 		cnf:         cnf,
-		lastMetrics: make(map[string]string),
+		lastMetrics: make(map[string]models.Metrics),
 		pollCount:   0,
 	}
 }
@@ -33,14 +34,14 @@ func (a *Agent) Run() {
 	go a.sendRuntimeMetrics()
 }
 
-func (a *Agent) saveMetrics(metrics map[string]string, pollCount int) {
+func (a *Agent) saveMetrics(metrics map[string]models.Metrics, pollCount int) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.lastMetrics = metrics
 	a.pollCount = pollCount
 }
 
-func (a *Agent) getSavedMetrics() (map[string]string, int) {
+func (a *Agent) getSavedMetrics() (map[string]models.Metrics, int) {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
 	return a.lastMetrics, a.pollCount
@@ -53,10 +54,18 @@ func (a *Agent) getMetricsFromRuntime() {
 		lastMetrics, _ := a.getSavedMetrics()
 		pollCount := GetCountDiff(lastMetrics, metrics)
 		a.saveMetrics(metrics, pollCount)
-		metrics[NameRandomField] = fmt.Sprintf("%v", rand.Float64())
+		metrics[NameRandomField] = models.Metrics{
+			ID:    NameRandomField,
+			MType: "gauge",
+			Value: Float64Ptr(rand.Float64()),
+		}
 
 		time.Sleep(time.Duration(a.cnf.PollInterval) * time.Second)
 	}
+}
+
+func int64Ptr(v int64) *int64 {
+	return &v
 }
 
 func (a *Agent) sendRuntimeMetrics() {
@@ -65,14 +74,15 @@ func (a *Agent) sendRuntimeMetrics() {
 		lastMetrics, pollCount := a.getSavedMetrics()
 
 		if len(lastMetrics) > 0 {
-			url := fmt.Sprintf("http://%s/update", a.cnf.Address)
+			url := fmt.Sprintf("http://%s/update/", a.cnf.Address)
 
-			err := PostMetrics(url, lastMetrics, "gauge")
-			if err != nil {
-				fmt.Println("Произошли ошибки при отправке метрик:", err)
+			lastMetrics["PollCount"] = models.Metrics{
+				ID:    "PollCount",
+				MType: models.Counter,
+				Delta: int64Ptr(int64(pollCount)),
 			}
 
-			err = PostMetrics(url, map[string]string{"pollCount": fmt.Sprintf("%v", pollCount)}, "counter")
+			err := PostMetricsJson(url, lastMetrics)
 			if err != nil {
 				fmt.Println("Произошли ошибки при отправке метрик:", err)
 			}
