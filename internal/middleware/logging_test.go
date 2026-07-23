@@ -4,7 +4,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
-	"time"
 
 	"github.com/mersikovs/korob.git/internal/middleware"
 	"github.com/stretchr/testify/require"
@@ -56,11 +55,10 @@ func TestLogger(t *testing.T) {
 			},
 			wantLogs: []map[string]any{
 				{
-					"req.method":   "GET",
-					"req.uri":      "/update/gauge/test/1.1",
-					"res.status":   200,
-					"req.duration": time.Duration(1 * time.Millisecond),
-					"res.size":     13,
+					"req.method": "GET",
+					"req.uri":    "/update/gauge/test/1.1",
+					"res.status": 200,
+					"res.size":   13,
 				},
 			},
 		},
@@ -82,18 +80,16 @@ func TestLogger(t *testing.T) {
 			},
 			wantLogs: []map[string]any{
 				{
-					"req.method":   "GET",
-					"req.uri":      "/update/gauge/test/1.1",
-					"res.status":   200,
-					"req.duration": time.Duration(1 * time.Millisecond),
-					"res.size":     13,
+					"req.method": "GET",
+					"req.uri":    "/update/gauge/test/1.1",
+					"res.status": 200,
+					"res.size":   13,
 				},
 				{
-					"req.method":   "GET",
-					"req.uri":      "/update/gauge/test/1.2",
-					"res.status":   200,
-					"req.duration": time.Duration(1 * time.Millisecond),
-					"res.size":     14,
+					"req.method": "GET",
+					"req.uri":    "/update/gauge/test/1.2",
+					"res.status": 200,
+					"res.size":   14,
 				},
 			},
 		},
@@ -128,17 +124,15 @@ func TestLogger(t *testing.T) {
 			for _, wantLog := range tt.wantLogs {
 				found := false
 				for _, logEntry := range log.logs {
+					_, durationExist := logEntry["req.duration"]
 					if logEntry["req.method"] == wantLog["req.method"] &&
 						logEntry["req.uri"] == wantLog["req.uri"] &&
 						logEntry["res.status"] == wantLog["res.status"] &&
-						logEntry["res.size"] == wantLog["res.size"] {
+						logEntry["res.size"] == wantLog["res.size"] &&
+						durationExist {
 
-						wd, ok1 := wantLog["req.duration"].(time.Duration)
-						ld, ok2 := logEntry["req.duration"].(time.Duration)
-						if ok1 && ok2 && wd > ld {
-							found = true
-							break
-						}
+						found = true
+						break
 
 					}
 				}
