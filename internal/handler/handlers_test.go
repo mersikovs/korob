@@ -13,7 +13,7 @@ import (
 )
 
 func TestUpdateMetric(t *testing.T) {
-	modelStorage := models.NewStorage()
+	modelStorage := models.NewStorage("test")
 	logger, err := logger.NewZap("debug")
 	if err != nil {
 		logger.Fatal("Ошибка создания логгера:", err)

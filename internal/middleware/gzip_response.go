@@ -48,7 +48,8 @@ func (c *compressWriter) checkAndSetCompression(statusCode int) {
 
 	contentType := c.w.Header().Get("Content-Type")
 	if strings.HasPrefix(contentType, "application/json") ||
-		strings.HasPrefix(contentType, "text/html") {
+		strings.HasPrefix(contentType, "text/html") ||
+		strings.HasPrefix(contentType, "text/plain") {
 
 		c.shouldCompress = true
 
