@@ -158,11 +158,9 @@ func PostMetrics(baseURL string, metrics map[string]string, metricType string) e
 	return nil
 }
 
-func PostMetricsJson(baseURL string, metrics map[string]models.Metrics) error {
+func PostMetricsJSON(baseURL string, metrics map[string]models.Metrics) error {
 	var errs []error
 	for _, v := range metrics {
-		url := fmt.Sprintf("%s", baseURL)
-
 		jsonData, err := json.Marshal(v)
 		if err != nil {
 			errs = append(errs, fmt.Errorf("ошибка создания json %s: %v", v.ID, err))
@@ -175,7 +173,7 @@ func PostMetricsJson(baseURL string, metrics map[string]models.Metrics) error {
 		gz.Write(jsonData)
 		gz.Close()
 
-		req, err := http.NewRequest("POST", url, &buf)
+		req, err := http.NewRequest("POST", baseURL, &buf)
 		if err != nil {
 			return err
 		}

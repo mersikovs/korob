@@ -2,7 +2,6 @@ package config
 
 import (
 	"flag"
-	"os"
 	"strconv"
 )
 
@@ -11,16 +10,6 @@ type ServerConfig struct {
 	StoreInterval   int
 	FileStoragePath string
 	Restore         bool
-}
-
-type ServerEnvSource interface {
-	LookupEnv(key string) (string, bool)
-}
-
-type ServerOSenv struct{}
-
-func (e ServerOSenv) LookupEnv(key string) (string, bool) {
-	return os.LookupEnv(key)
 }
 
 func ServerParseConfig(fs *flag.FlagSet, args []string, env EnvSource) (*ServerConfig, error) {
@@ -58,7 +47,6 @@ func ServerParseConfig(fs *flag.FlagSet, args []string, env EnvSource) (*ServerC
 		if r == "false" {
 			cnf.Restore = false
 		}
-
 	}
 
 	return cnf, nil

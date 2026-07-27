@@ -1,10 +1,12 @@
 package models
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"slices"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/mersikovs/korob.git/internal/logger"
@@ -19,7 +21,7 @@ type MemoryStorage struct {
 	mu            sync.RWMutex
 	Metrics       map[string]map[string]Metrics
 	filePath      string
-	storeInterval int
+	storeInterval atomic.Int64
 }
 
 type Storage interface {
@@ -98,7 +100,8 @@ func (s *MemoryStorage) Save(mType, name string, m Metrics) error {
 
 	s.Metrics[mType][name] = m
 	s.mu.Unlock()
-	if s.storeInterval == 0 {
+	currentInterval := int(s.storeInterval.Load())
+	if currentInterval == 0 {
 		if err := s.Store(); err != nil {
 			return err
 		}
@@ -159,18 +162,33 @@ func (s *MemoryStorage) Restore() error {
 	return nil
 }
 
-func (s *MemoryStorage) StartPeriodicSave(interval int, l logger.Logger) {
+func (s *MemoryStorage) StartPeriodicSave(ctx context.Context, interval int, l logger.Logger) {
 	if interval == 0 {
 		return
 	}
 
-	s.storeInterval = interval
+	s.storeInterval.Store(int64(interval))
 
 	go func() {
 		for {
-			time.Sleep(time.Duration(interval) * time.Second)
+			currentInterval := int(s.storeInterval.Load())
+
+			if currentInterval <= 0 {
+				l.Info("Остановим переодическое сохранение, вдруг в программе изменю интервал")
+				return
+			}
+
+			time.Sleep(time.Duration(currentInterval) * time.Second)
+
+			select {
+			case <-ctx.Done():
+				l.Info("остановка по контексту")
+				return
+			default:
+			}
+
 			if err := s.Store(); err != nil {
-				l.Info("failed to save metrics", "error", err)
+				l.Info("метрика не сохранена", "error", err)
 			}
 		}
 	}()

@@ -26,7 +26,7 @@ func TestParse(t *testing.T) {
 	}{
 		{
 			name: "default values",
-			fs:   flag.NewFlagSet("test", flag.ContinueOnError),
+			fs:   flag.NewFlagSet("agent_test", flag.ContinueOnError),
 			args: []string{},
 			env:  FakeEnv{},
 			want: &config.Config{
@@ -37,7 +37,7 @@ func TestParse(t *testing.T) {
 		},
 		{
 			name: "flags values",
-			fs:   flag.NewFlagSet("test", flag.ContinueOnError),
+			fs:   flag.NewFlagSet("agent_test", flag.ContinueOnError),
 			args: []string{"-a", "192.168.1.1:8080", "-r", "5", "-p", "1"},
 			env:  FakeEnv{},
 			want: &config.Config{
@@ -48,7 +48,7 @@ func TestParse(t *testing.T) {
 		},
 		{
 			name: "env over flags values",
-			fs:   flag.NewFlagSet("test", flag.ContinueOnError),
+			fs:   flag.NewFlagSet("agent_test", flag.ContinueOnError),
 			args: []string{"-a", "192.168.1.1:8080", "-r", "5", "-p", "1"},
 			env: FakeEnv{
 				"ADDRESS":         "192.168.1.1:8081",
@@ -63,7 +63,7 @@ func TestParse(t *testing.T) {
 		},
 		{
 			name: "env over default values",
-			fs:   flag.NewFlagSet("test", flag.ContinueOnError),
+			fs:   flag.NewFlagSet("agent_test", flag.ContinueOnError),
 			args: []string{},
 			env: FakeEnv{
 				"ADDRESS":         "192.168.1.1:8081",
@@ -78,7 +78,7 @@ func TestParse(t *testing.T) {
 		},
 		{
 			name: "invalidFlag",
-			fs:   flag.NewFlagSet("test", flag.ContinueOnError),
+			fs:   flag.NewFlagSet("agent_test", flag.ContinueOnError),
 			args: []string{"-a", "192.168.1.1:8080", "-r", "5", "-p", "1", "-invalidFlag", "true"},
 			env: FakeEnv{
 				"ADDRESS":         "192.168.1.1:8081",
@@ -94,7 +94,7 @@ func TestParse(t *testing.T) {
 		},
 		{
 			name: "empty env values",
-			fs:   flag.NewFlagSet("test", flag.ContinueOnError),
+			fs:   flag.NewFlagSet("agent_test", flag.ContinueOnError),
 			args: []string{"-a", "192.168.1.1:8080", "-r", "5", "-p", "1"},
 			env: FakeEnv{
 				"ADDRESS":         "",
@@ -109,7 +109,7 @@ func TestParse(t *testing.T) {
 		},
 		{
 			name: "mixied env and flags values",
-			fs:   flag.NewFlagSet("test", flag.ContinueOnError),
+			fs:   flag.NewFlagSet("agent_test", flag.ContinueOnError),
 			args: []string{"-r", "5", "-p", "1"},
 			env: FakeEnv{
 				"ADDRESS": "192.168.1.1:8080",

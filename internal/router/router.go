@@ -16,11 +16,13 @@ func NewRouter(service *service.MetricService) *chi.Mux {
 	r.Use(middleware.GzipResponseMiddleware)
 	r.Use(middleware.GzipRequestMiddleware)
 
+	//Получить метрики
 	r.Get("/", metricHandler.ListMetrics)
-	r.Get("/value/{type}/{name}", metricHandler.GetMetricByUrlParam)
-	r.Post("/value/", metricHandler.GetMetricByJSONParam)
-	r.Post("/update/", metricHandler.UpdateMetricByJSONParam)
-	r.Post("/update/{type}/{name}/{value}", metricHandler.UpdateMetricByParam)
+	r.Get("/value/{type}/{name}", metricHandler.GetMetricFromPath)
+	r.Post("/value/", metricHandler.FetchMetricFromBody)
+	//Обновить метрики
+	r.Post("/update/{type}/{name}/{value}", metricHandler.UpdateMetricFromPath)
+	r.Post("/update/", metricHandler.UpdateMetricFromBody)
 
 	return r
 }

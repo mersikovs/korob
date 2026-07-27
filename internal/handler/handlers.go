@@ -20,57 +20,6 @@ func NewMetricHandler(metricService *service.MetricService) *MetricHandler {
 	return &MetricHandler{metricService: metricService}
 }
 
-func (h *MetricHandler) UpdateMetricByParam(w http.ResponseWriter, r *http.Request) {
-	metricType := chi.URLParam(r, "type")
-	metricName := chi.URLParam(r, "name")
-	metricValue := chi.URLParam(r, "value")
-
-	if metricName == "" {
-		w.WriteHeader(http.StatusNotFound)
-		return
-	}
-
-	serviceErr := h.metricService.UpdateMetric(metricType, metricName, metricValue)
-	if serviceErr != nil {
-		w.WriteHeader(http.StatusBadRequest)
-		return
-	}
-
-	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-	w.WriteHeader(http.StatusOK)
-}
-
-func (h *MetricHandler) UpdateMetricByJSONParam(w http.ResponseWriter, r *http.Request) {
-	if r.Header.Get("Content-Type") != "application/json" {
-		w.WriteHeader(http.StatusUnsupportedMediaType)
-		return
-	}
-
-	var req models.Metrics
-	decoder := json.NewDecoder(r.Body)
-	decoder.DisallowUnknownFields()
-
-	if err := decoder.Decode(&req); err != nil {
-		h.metricService.Logger.Info(err.Error())
-		w.WriteHeader(http.StatusBadRequest)
-		return
-	}
-
-	if req.ID == "" {
-		w.WriteHeader(http.StatusNotFound)
-		return
-	}
-
-	serviceErr := h.metricService.UpdateMetricFromStruct(req.MType, req.ID, req)
-	if serviceErr != nil {
-		w.WriteHeader(http.StatusBadRequest)
-		return
-	}
-
-	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-	w.WriteHeader(http.StatusOK)
-}
-
 func (h *MetricHandler) ListMetrics(w http.ResponseWriter, r *http.Request) {
 	metricsNames := h.metricService.ListMetrics()
 
@@ -105,7 +54,7 @@ func (h *MetricHandler) ListMetrics(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (h *MetricHandler) GetMetricByUrlParam(w http.ResponseWriter, r *http.Request) {
+func (h *MetricHandler) GetMetricFromPath(w http.ResponseWriter, r *http.Request) {
 	metricType := chi.URLParam(r, "type")
 	metricName := chi.URLParam(r, "name")
 
@@ -128,7 +77,7 @@ func (h *MetricHandler) GetMetricByUrlParam(w http.ResponseWriter, r *http.Reque
 	}
 }
 
-func (h *MetricHandler) GetMetricByJSONParam(w http.ResponseWriter, r *http.Request) {
+func (h *MetricHandler) FetchMetricFromBody(w http.ResponseWriter, r *http.Request) {
 	if r.Header.Get("Content-Type") != "application/json" {
 		w.WriteHeader(http.StatusUnsupportedMediaType)
 		return
@@ -182,4 +131,55 @@ func (h *MetricHandler) GetMetricByJSONParam(w http.ResponseWriter, r *http.Requ
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(response)
+}
+
+func (h *MetricHandler) UpdateMetricFromPath(w http.ResponseWriter, r *http.Request) {
+	metricType := chi.URLParam(r, "type")
+	metricName := chi.URLParam(r, "name")
+	metricValue := chi.URLParam(r, "value")
+
+	if metricName == "" {
+		w.WriteHeader(http.StatusNotFound)
+		return
+	}
+
+	serviceErr := h.metricService.UpdateMetric(metricType, metricName, metricValue)
+	if serviceErr != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+}
+
+func (h *MetricHandler) UpdateMetricFromBody(w http.ResponseWriter, r *http.Request) {
+	if r.Header.Get("Content-Type") != "application/json" {
+		w.WriteHeader(http.StatusUnsupportedMediaType)
+		return
+	}
+
+	var req models.Metrics
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+
+	if err := decoder.Decode(&req); err != nil {
+		h.metricService.Logger.Info(err.Error())
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	if req.ID == "" {
+		w.WriteHeader(http.StatusNotFound)
+		return
+	}
+
+	serviceErr := h.metricService.UpdateMetricFromStruct(req.MType, req.ID, req)
+	if serviceErr != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
 }

@@ -74,7 +74,7 @@ func (a *Agent) sendRuntimeMetrics() {
 		lastMetrics, pollCount := a.getSavedMetrics()
 
 		if len(lastMetrics) > 0 {
-			url := fmt.Sprintf("http://%s/update/", a.cnf.Address)
+			updateURL := fmt.Sprintf("http://%s/update/", a.cnf.Address)
 
 			lastMetrics["PollCount"] = models.Metrics{
 				ID:    "PollCount",
@@ -82,7 +82,7 @@ func (a *Agent) sendRuntimeMetrics() {
 				Delta: int64Ptr(int64(pollCount)),
 			}
 
-			err := PostMetricsJson(url, lastMetrics)
+			err := PostMetricsJSON(updateURL, lastMetrics)
 			if err != nil {
 				fmt.Println("Произошли ошибки при отправке метрик:", err)
 			}

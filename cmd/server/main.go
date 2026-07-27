@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"net/http"
@@ -15,7 +16,7 @@ import (
 
 func main() {
 	fs := flag.NewFlagSet("server", flag.ContinueOnError)
-	cnf, err := config.ServerParseConfig(fs, os.Args[1:], config.ServerOSenv{})
+	cnf, err := config.ServerParseConfig(fs, os.Args[1:], config.OSenv{})
 	if err != nil {
 		fmt.Println("Ошибка парсинга параметров")
 		return
@@ -26,8 +27,9 @@ func main() {
 		logger.Fatal("Ошибка создания логгера:", err)
 	}
 
+	ctx, cancel := context.WithCancel(context.Background())
 	modelStorage := models.NewStorage(cnf.FileStoragePath)
-	modelStorage.StartPeriodicSave(cnf.StoreInterval, logger)
+	modelStorage.StartPeriodicSave(ctx, cnf.StoreInterval, logger)
 	if cnf.Restore {
 		modelStorage.Restore()
 	}
@@ -40,4 +42,5 @@ func main() {
 	if err != nil {
 		logger.Fatal("Ошибка запуска сервера:", err)
 	}
+	cancel()
 }
