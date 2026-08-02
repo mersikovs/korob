@@ -4,15 +4,20 @@ import (
 	"fmt"
 	"strconv"
 
+	"github.com/mersikovs/korob.git/internal/logger"
 	models "github.com/mersikovs/korob.git/internal/model"
 )
 
 type MetricService struct {
-	repo models.Storage
+	repo   models.Storage
+	Logger logger.Logger
 }
 
-func NewMetricService(repo models.Storage) *MetricService {
-	return &MetricService{repo: repo}
+func NewMetricService(repo models.Storage, log logger.Logger) *MetricService {
+	return &MetricService{
+		repo:   repo,
+		Logger: log,
+	}
 }
 
 func (m *MetricService) GetMetric(metricType, metricName string) (string, error) {
@@ -80,6 +85,57 @@ func (m *MetricService) UpdateMetric(metricType, metricName, metricValue string)
 			MType: metricType,
 			Delta: nil,
 			Value: &gauge,
+		})
+
+		if err != nil {
+			return fmt.Errorf("ошибка при сохранении метрики %s: %v", metricName, err)
+		}
+
+		return nil
+	}
+
+	return fmt.Errorf("неизвестный тип метрики %s", metricType)
+}
+
+func (m *MetricService) UpdateMetricFromStruct(metricType, metricName string, metricValue models.Metrics) error {
+
+	switch metricType {
+	case models.Counter:
+
+		if metricValue.Delta == nil {
+			return fmt.Errorf("ошибка при обновлении метрики %s", metricName)
+		}
+
+		metric, err := m.repo.Get(metricType, metricName)
+		if err != nil {
+			return fmt.Errorf("ошибка при получении метрики %s: %v", metricName, err)
+		}
+
+		var counter int64
+		if metric.Delta != nil {
+			counter = counter + *metric.Delta
+		}
+		if metricValue.Delta != nil {
+			counter = counter + *metricValue.Delta
+		}
+
+		err = m.repo.Save(metricType, metricName, models.Metrics{
+			ID:    metricName,
+			MType: metricType,
+			Delta: &counter,
+		})
+
+		if err != nil {
+			return fmt.Errorf("ошибка при сохранении метрики %s: %v", metricName, err)
+		}
+
+		return nil
+	case models.Gauge:
+
+		err := m.repo.Save(metricType, metricName, models.Metrics{
+			ID:    metricName,
+			MType: metricType,
+			Value: metricValue.Value,
 		})
 
 		if err != nil {

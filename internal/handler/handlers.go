@@ -1,11 +1,14 @@
 package handler
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
+	models "github.com/mersikovs/korob.git/internal/model"
 	"github.com/mersikovs/korob.git/internal/service"
 )
 
@@ -15,26 +18,6 @@ type MetricHandler struct {
 
 func NewMetricHandler(metricService *service.MetricService) *MetricHandler {
 	return &MetricHandler{metricService: metricService}
-}
-
-func (h *MetricHandler) UpdateMetric(w http.ResponseWriter, r *http.Request) {
-	metricType := chi.URLParam(r, "type")
-	metricName := chi.URLParam(r, "name")
-	metricValue := chi.URLParam(r, "value")
-
-	if metricName == "" {
-		w.WriteHeader(http.StatusNotFound)
-		return
-	}
-
-	serviceErr := h.metricService.UpdateMetric(metricType, metricName, metricValue)
-	if serviceErr != nil {
-		w.WriteHeader(http.StatusBadRequest)
-		return
-	}
-
-	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-	w.WriteHeader(http.StatusOK)
 }
 
 func (h *MetricHandler) ListMetrics(w http.ResponseWriter, r *http.Request) {
@@ -71,7 +54,7 @@ func (h *MetricHandler) ListMetrics(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (h *MetricHandler) GetMetric(w http.ResponseWriter, r *http.Request) {
+func (h *MetricHandler) GetMetricFromPath(w http.ResponseWriter, r *http.Request) {
 	metricType := chi.URLParam(r, "type")
 	metricName := chi.URLParam(r, "name")
 
@@ -92,4 +75,111 @@ func (h *MetricHandler) GetMetric(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		fmt.Printf("ошибка записи ответа: %v", err)
 	}
+}
+
+func (h *MetricHandler) FetchMetricFromBody(w http.ResponseWriter, r *http.Request) {
+	if r.Header.Get("Content-Type") != "application/json" {
+		w.WriteHeader(http.StatusUnsupportedMediaType)
+		return
+	}
+
+	var req models.Metrics
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+
+	if err := decoder.Decode(&req); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	if req.ID == "" {
+		w.WriteHeader(http.StatusNotFound)
+		return
+	}
+
+	value, serviceErr := h.metricService.GetMetric(req.MType, req.ID)
+	if serviceErr != nil {
+		w.WriteHeader(http.StatusNotFound)
+		return
+	}
+
+	response := models.Metrics{
+		ID:    req.ID,
+		MType: req.MType,
+	}
+
+	switch req.MType {
+	case models.Counter:
+		delta, err := strconv.ParseInt(value, 10, 64)
+		if err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		response.Delta = &delta
+	case models.Gauge:
+		gaugeValue, err := strconv.ParseFloat(value, 64)
+		if err != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		response.Value = &gaugeValue
+	default:
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(response)
+}
+
+func (h *MetricHandler) UpdateMetricFromPath(w http.ResponseWriter, r *http.Request) {
+	metricType := chi.URLParam(r, "type")
+	metricName := chi.URLParam(r, "name")
+	metricValue := chi.URLParam(r, "value")
+
+	if metricName == "" {
+		w.WriteHeader(http.StatusNotFound)
+		return
+	}
+
+	serviceErr := h.metricService.UpdateMetric(metricType, metricName, metricValue)
+	if serviceErr != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+}
+
+func (h *MetricHandler) UpdateMetricFromBody(w http.ResponseWriter, r *http.Request) {
+	if r.Header.Get("Content-Type") != "application/json" {
+		w.WriteHeader(http.StatusUnsupportedMediaType)
+		return
+	}
+
+	var req models.Metrics
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+
+	if err := decoder.Decode(&req); err != nil {
+		h.metricService.Logger.Info(err.Error())
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	if req.ID == "" {
+		w.WriteHeader(http.StatusNotFound)
+		return
+	}
+
+	serviceErr := h.metricService.UpdateMetricFromStruct(req.MType, req.ID, req)
+	if serviceErr != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
 }

@@ -1,10 +1,16 @@
 package agent
 
 import (
+	"bytes"
+	"compress/gzip"
+	"encoding/json"
 	"fmt"
 	"net/http"
+	"runtime"
 	"runtime/metrics"
 	"time"
+
+	models "github.com/mersikovs/korob.git/internal/model"
 )
 
 // AI генерация кода DirectMapping:
@@ -23,8 +29,8 @@ var DirectMapping = map[string]string{
 	"/memory/classes/other:bytes":                 "OtherSys",
 }
 
-func GetRuntimeMetrics() map[string]string {
-	result := make(map[string]string)
+func GetRuntimeMetrics() map[string]models.Metrics {
+	result := make(map[string]models.Metrics)
 	descriptions := metrics.All()
 
 	samples := make([]metrics.Sample, len(descriptions))
@@ -41,23 +47,80 @@ func GetRuntimeMetrics() map[string]string {
 		if !ok {
 			continue
 		}
+		m := models.Metrics{
+			ID:    name,
+			MType: models.Gauge,
+		}
 		switch sample.Value.Kind() {
 		case metrics.KindUint64:
-			result[name] = fmt.Sprintf("%v", sample.Value.Uint64())
+			v := float64(sample.Value.Uint64())
+			m.Value = &v
 		case metrics.KindFloat64:
-			result[name] = fmt.Sprintf("%v", sample.Value.Float64())
+			v := sample.Value.Float64()
+			m.Value = &v
 		default:
 			// Игнорируем гистограммы пока
 		}
+
+		result[name] = m
 	}
+
+	//TODO Старые метрики заменить на актуальные из runtime/metrics
+	var m runtime.MemStats
+	runtime.ReadMemStats(&m)
+
+	gaugeMetrics := map[string]uint64{
+		"Alloc":        m.Alloc,
+		"Frees":        m.Frees,
+		"GCSys":        m.GCSys,
+		"HeapAlloc":    m.HeapAlloc,
+		"HeapIdle":     m.HeapIdle,
+		"HeapInuse":    m.HeapInuse,
+		"HeapSys":      m.HeapSys,
+		"HeapReleased": m.HeapReleased,
+		"HeapObjects":  m.HeapObjects,
+		"Sys":          m.Sys,
+		"StackSys":     m.StackSys,
+		"LastGC":       m.LastGC,
+		"Lookups":      m.Lookups,
+		"PauseTotalNs": m.PauseTotalNs,
+		"MCacheSys":    m.MCacheSys,
+		"MSpanSys":     m.MSpanSys,
+		"NextGC":       m.NextGC,
+	}
+
+	for name, value := range gaugeMetrics {
+		result[name] = models.Metrics{
+			ID:    name,
+			MType: "gauge",
+			Value: Float64Ptr(float64(value)),
+		}
+	}
+
+	result["NumForcedGC"] = models.Metrics{
+		ID:    "NumForcedGC",
+		MType: "gauge",
+		Value: Float64Ptr(float64(m.NumForcedGC)),
+	}
+
+	result["GCCPUFraction"] = models.Metrics{
+		ID:    "GCCPUFraction",
+		MType: "gauge",
+		Value: Float64Ptr(float64(m.GCCPUFraction)),
+	}
+
 	return result
 }
 
-func GetCountDiff(oldMetrics, newMetrics map[string]string) int {
+func Float64Ptr(v float64) *float64 {
+	return &v
+}
+
+func GetCountDiff(oldMetrics, newMetrics map[string]models.Metrics) int {
 	countDiff := 0
 	for key, newValue := range newMetrics {
 		if oldValue, ok := oldMetrics[key]; ok {
-			if newValue != oldValue {
+			if newValue.Value != oldValue.Value {
 				countDiff++
 			}
 		} else {
@@ -74,7 +137,7 @@ func PostMetrics(baseURL string, metrics map[string]string, metricType string) e
 		resp, err := http.Post(url, "text/plain", nil)
 		if err != nil {
 			errs = append(errs, fmt.Errorf("ошибка отправки метрики %s: %v", k, err))
-			time.Sleep(time.Duration(1) * time.Second)
+			time.Sleep(time.Duration(10) * time.Millisecond)
 			continue
 		}
 		if resp.StatusCode != 200 {
@@ -86,7 +149,56 @@ func PostMetrics(baseURL string, metrics map[string]string, metricType string) e
 				errs = append(errs, fmt.Errorf("ошибка закрытия тела ответа для метрики %s: %v", k, err))
 			}
 		}
-		time.Sleep(time.Duration(1) * time.Second)
+		time.Sleep(time.Duration(10) * time.Millisecond)
+	}
+
+	if len(errs) > 0 {
+		return fmt.Errorf("ошибки отправки метрик: %v", errs)
+	}
+	return nil
+}
+
+func PostMetricsJSON(baseURL string, metrics map[string]models.Metrics) error {
+	var errs []error
+	for _, v := range metrics {
+		jsonData, err := json.Marshal(v)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("ошибка создания json %s: %v", v.ID, err))
+			time.Sleep(time.Duration(10) * time.Millisecond)
+			continue
+		}
+
+		var buf bytes.Buffer
+		gz := gzip.NewWriter(&buf)
+		gz.Write(jsonData)
+		gz.Close()
+
+		req, err := http.NewRequest("POST", baseURL, &buf)
+		if err != nil {
+			return err
+		}
+
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Content-Encoding", "gzip")
+		req.Header.Set("Accept-Encoding", "gzip")
+
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("ошибка отправки метрики %s: %v", v.ID, err))
+			time.Sleep(time.Duration(10) * time.Millisecond)
+			continue
+		}
+		if resp.StatusCode != 200 {
+			errs = append(errs, fmt.Errorf("ошибка отправки метрики %s: %v", v.ID, resp.Status))
+		}
+		if resp.Body != nil {
+			err := resp.Body.Close()
+			if err != nil {
+				errs = append(errs, fmt.Errorf("ошибка закрытия тела ответа для метрики %s: %v", v.ID, err))
+			}
+		}
+
+		time.Sleep(time.Duration(10) * time.Millisecond)
 	}
 
 	if len(errs) > 0 {
