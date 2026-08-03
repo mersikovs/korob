@@ -18,7 +18,7 @@ func TestUpdateMetric(t *testing.T) {
 	if err != nil {
 		logger.Fatal("Ошибка создания логгера:", err)
 	}
-	service := service.NewMetricService(modelStorage, logger)
+	service := service.NewMetricService(modelStorage, nil, logger)
 	router := router.NewRouter(service)
 
 	type want struct {

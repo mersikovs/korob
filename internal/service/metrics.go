@@ -4,18 +4,21 @@ import (
 	"fmt"
 	"strconv"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/mersikovs/korob.git/internal/logger"
 	models "github.com/mersikovs/korob.git/internal/model"
 )
 
 type MetricService struct {
 	repo   models.Storage
+	Pool   *pgxpool.Pool
 	Logger logger.Logger
 }
 
-func NewMetricService(repo models.Storage, log logger.Logger) *MetricService {
+func NewMetricService(repo models.Storage, pool *pgxpool.Pool, log logger.Logger) *MetricService {
 	return &MetricService{
 		repo:   repo,
+		Pool:   pool,
 		Logger: log,
 	}
 }

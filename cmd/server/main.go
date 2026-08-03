@@ -8,6 +8,7 @@ import (
 	"os"
 
 	"github.com/mersikovs/korob.git/internal/config"
+	"github.com/mersikovs/korob.git/internal/config/db"
 	"github.com/mersikovs/korob.git/internal/logger"
 	models "github.com/mersikovs/korob.git/internal/model"
 	"github.com/mersikovs/korob.git/internal/router"
@@ -28,13 +29,20 @@ func main() {
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
+
+	pool, err := db.NewPool(ctx, cnf.DatabaseDSN)
+	if err != nil {
+		logger.Info("не удалось создать пул соединений: %v", err)
+	}
+	defer pool.Close()
+
 	modelStorage := models.NewStorage(cnf.FileStoragePath)
 	modelStorage.StartPeriodicSave(ctx, cnf.StoreInterval, logger)
 	if cnf.Restore {
 		modelStorage.Restore()
 	}
 
-	service := service.NewMetricService(modelStorage, logger)
+	service := service.NewMetricService(modelStorage, pool, logger)
 
 	router := router.NewRouter(service)
 

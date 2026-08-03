@@ -20,6 +20,22 @@ func NewMetricHandler(metricService *service.MetricService) *MetricHandler {
 	return &MetricHandler{metricService: metricService}
 }
 
+func (h *MetricHandler) PingDB(w http.ResponseWriter, r *http.Request) {
+	if h.metricService.Pool == nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
+	err := h.metricService.Pool.Ping(r.Context())
+
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+}
+
 func (h *MetricHandler) ListMetrics(w http.ResponseWriter, r *http.Request) {
 	metricsNames := h.metricService.ListMetrics()
 
