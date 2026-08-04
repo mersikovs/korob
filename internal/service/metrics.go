@@ -4,27 +4,25 @@ import (
 	"fmt"
 	"strconv"
 
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/mersikovs/korob.git/internal/logger"
 	models "github.com/mersikovs/korob.git/internal/model"
+	"github.com/mersikovs/korob.git/internal/repository"
 )
 
 type MetricService struct {
-	repo   models.Storage
-	Pool   *pgxpool.Pool
+	Repo   repository.Storage
 	Logger logger.Logger
 }
 
-func NewMetricService(repo models.Storage, pool *pgxpool.Pool, log logger.Logger) *MetricService {
+func NewMetricService(repo repository.Storage, log logger.Logger) *MetricService {
 	return &MetricService{
-		repo:   repo,
-		Pool:   pool,
+		Repo:   repo,
 		Logger: log,
 	}
 }
 
 func (m *MetricService) GetMetric(metricType, metricName string) (string, error) {
-	metric, err := m.repo.Get(metricType, metricName)
+	metric, err := m.Repo.Get(metricType, metricName)
 	if err != nil {
 		return "", fmt.Errorf("неизвестная метрика %s", metricName)
 	}
@@ -56,7 +54,7 @@ func (m *MetricService) UpdateMetric(metricType, metricName, metricValue string)
 			return fmt.Errorf("ошибка при обновлении метрики %s: %v", metricName, err)
 		}
 
-		metric, err := m.repo.Get(metricType, metricName)
+		metric, err := m.Repo.Get(metricType, metricName)
 		if err != nil {
 			return fmt.Errorf("ошибка при получении метрики %s: %v", metricName, err)
 		}
@@ -65,7 +63,7 @@ func (m *MetricService) UpdateMetric(metricType, metricName, metricValue string)
 			counter += *metric.Delta
 		}
 
-		err = m.repo.Save(metricType, metricName, models.Metrics{
+		err = m.Repo.Save(metricType, metricName, models.Metrics{
 			ID:    metricName,
 			MType: metricType,
 			Delta: &counter,
@@ -83,7 +81,7 @@ func (m *MetricService) UpdateMetric(metricType, metricName, metricValue string)
 			return fmt.Errorf("ошибка при обновлении метрики %s: %v", metricName, err)
 		}
 
-		err = m.repo.Save(metricType, metricName, models.Metrics{
+		err = m.Repo.Save(metricType, metricName, models.Metrics{
 			ID:    metricName,
 			MType: metricType,
 			Delta: nil,
@@ -109,7 +107,7 @@ func (m *MetricService) UpdateMetricFromStruct(metricType, metricName string, me
 			return fmt.Errorf("ошибка при обновлении метрики %s", metricName)
 		}
 
-		metric, err := m.repo.Get(metricType, metricName)
+		metric, err := m.Repo.Get(metricType, metricName)
 		if err != nil {
 			return fmt.Errorf("ошибка при получении метрики %s: %v", metricName, err)
 		}
@@ -122,7 +120,7 @@ func (m *MetricService) UpdateMetricFromStruct(metricType, metricName string, me
 			counter = counter + *metricValue.Delta
 		}
 
-		err = m.repo.Save(metricType, metricName, models.Metrics{
+		err = m.Repo.Save(metricType, metricName, models.Metrics{
 			ID:    metricName,
 			MType: metricType,
 			Delta: &counter,
@@ -135,7 +133,7 @@ func (m *MetricService) UpdateMetricFromStruct(metricType, metricName string, me
 		return nil
 	case models.Gauge:
 
-		err := m.repo.Save(metricType, metricName, models.Metrics{
+		err := m.Repo.Save(metricType, metricName, models.Metrics{
 			ID:    metricName,
 			MType: metricType,
 			Value: metricValue.Value,
@@ -152,5 +150,5 @@ func (m *MetricService) UpdateMetricFromStruct(metricType, metricName string, me
 }
 
 func (m *MetricService) ListMetrics() []string {
-	return m.repo.GetNamesList()
+	return m.Repo.GetNamesList()
 }

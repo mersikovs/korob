@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -12,6 +13,10 @@ import (
 	"github.com/mersikovs/korob.git/internal/service"
 )
 
+type Pinger interface {
+	Ping(ctx context.Context) error
+}
+
 type MetricHandler struct {
 	metricService *service.MetricService
 }
@@ -21,12 +26,18 @@ func NewMetricHandler(metricService *service.MetricService) *MetricHandler {
 }
 
 func (h *MetricHandler) PingDB(w http.ResponseWriter, r *http.Request) {
-	if h.metricService.Pool == nil {
+	if h.metricService.Repo == nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
 
-	err := h.metricService.Pool.Ping(r.Context())
+	pinger, ok := h.metricService.Repo.(Pinger)
+	if !ok {
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
+	err := pinger.Ping(r.Context())
 
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
@@ -192,6 +203,7 @@ func (h *MetricHandler) UpdateMetricFromBody(w http.ResponseWriter, r *http.Requ
 
 	serviceErr := h.metricService.UpdateMetricFromStruct(req.MType, req.ID, req)
 	if serviceErr != nil {
+		h.metricService.Logger.Info(serviceErr.Error())
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}

@@ -1,24 +1,31 @@
 package handler_test
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
 	"github.com/mersikovs/korob.git/internal/logger"
 	models "github.com/mersikovs/korob.git/internal/model"
+	"github.com/mersikovs/korob.git/internal/repository"
 	"github.com/mersikovs/korob.git/internal/router"
 	"github.com/mersikovs/korob.git/internal/service"
 	"github.com/stretchr/testify/assert"
 )
 
 func TestUpdateMetric(t *testing.T) {
-	modelStorage := models.NewStorage("test")
+	cnf := models.ServerConfig{
+		DatabaseDSN:     "",
+		FileStoragePath: "test.back",
+	}
+	ctx := context.Background()
 	logger, err := logger.NewZap("debug")
+	modelStorage, _ := repository.NewStorage(ctx, &cnf, logger)
 	if err != nil {
 		logger.Fatal("Ошибка создания логгера:", err)
 	}
-	service := service.NewMetricService(modelStorage, nil, logger)
+	service := service.NewMetricService(modelStorage, logger)
 	router := router.NewRouter(service)
 
 	type want struct {

@@ -3,18 +3,12 @@ package config
 import (
 	"flag"
 	"strconv"
+
+	models "github.com/mersikovs/korob.git/internal/model"
 )
 
-type ServerConfig struct {
-	Address         string
-	DatabaseDSN     string
-	FileStoragePath string
-	Restore         bool
-	StoreInterval   int
-}
-
-func ServerParseConfig(fs *flag.FlagSet, args []string, env EnvSource) (*ServerConfig, error) {
-	cnf := &ServerConfig{}
+func ServerParseConfig(fs *flag.FlagSet, args []string, env EnvSource) (*models.ServerConfig, error) {
+	cnf := &models.ServerConfig{}
 
 	fs.StringVar(&cnf.Address, "a", "localhost:8080", "адрес эндпоинта HTTP-сервера")
 	fs.StringVar(&cnf.DatabaseDSN, "d", "", "строка подключения к БД (DSN)")
