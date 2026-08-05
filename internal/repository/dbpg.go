@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -95,6 +96,37 @@ func (s *PgStorage) Save(mType, name string, m models.Metrics) error {
 	}
 
 	return nil
+}
+
+func (s *PgStorage) BatchSave(metrics []models.Metrics) error {
+	if len(metrics) == 0 {
+		return nil
+	}
+	ctx := context.TODO()
+
+	var sb strings.Builder
+	sb.WriteString("INSERT INTO metrics (id, type, delta, value) VALUES ")
+
+	args := make([]any, 0, len(metrics)*4)
+	for i, m := range metrics {
+		if i > 0 {
+			sb.WriteString(", ")
+		}
+
+		base := i*4 + 1
+		fmt.Fprintf(&sb, "($%d, $%d, $%d, $%d)", base, base+1, base+2, base+3)
+		args = append(args, m.ID, m.MType, m.Delta, m.Value)
+	}
+
+	sb.WriteString(` ON CONFLICT (id, type) DO UPDATE SET
+        value = CASE
+            WHEN EXCLUDED.type = 'counter' THEN metrics.value + EXCLUDED.value
+            WHEN EXCLUDED.type = 'gauge'   THEN EXCLUDED.value
+            ELSE metrics.value
+        END`)
+
+	_, err := s.pool.Exec(ctx, sb.String(), args...)
+	return err
 }
 
 func (s *PgStorage) Ping(ctx context.Context) error {

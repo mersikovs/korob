@@ -206,3 +206,45 @@ func PostMetricsJSON(baseURL string, metrics map[string]models.Metrics) error {
 	}
 	return nil
 }
+
+func PostMetricsBatch(baseURL string, metrics map[string]models.Metrics) error {
+	metricsSlice := make([]models.Metrics, 0)
+	for _, v := range metrics {
+		metricsSlice = append(metricsSlice, v)
+	}
+
+	jsonData, err := json.Marshal(metricsSlice)
+
+	if err != nil {
+		return fmt.Errorf("ошибка создания json: %v", err)
+	}
+	var buf bytes.Buffer
+	gz := gzip.NewWriter(&buf)
+	gz.Write(jsonData)
+	gz.Close()
+
+	req, err := http.NewRequest("POST", baseURL, &buf)
+	if err != nil {
+		return err
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Content-Encoding", "gzip")
+	req.Header.Set("Accept-Encoding", "gzip")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("ошибка отправки метрик: %v", err)
+	}
+	if resp.StatusCode != 200 {
+		return fmt.Errorf("ошибка отправки метрик: %v", resp.Status)
+	}
+	if resp.Body != nil {
+		err := resp.Body.Close()
+		if err != nil {
+			return fmt.Errorf("ошибка закрытия тела ответа для метрики: %v", err)
+		}
+	}
+
+	return nil
+}

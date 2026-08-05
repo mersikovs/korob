@@ -25,6 +25,7 @@ func NewRouter(service *service.MetricService) *chi.Mux {
 	//Обновить метрики
 	r.Post("/update/{type}/{name}/{value}", metricHandler.UpdateMetricFromPath)
 	r.Post("/update/", metricHandler.UpdateMetricFromBody)
+	r.Post("/updates/", metricHandler.BatchUpdateMetricsFromBody)
 
 	return r
 }

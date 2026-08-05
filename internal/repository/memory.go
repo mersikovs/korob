@@ -84,6 +84,43 @@ func (s *MemoryStorage) Save(mType, name string, m models.Metrics) error {
 	return nil
 }
 
+func (s *MemoryStorage) BatchSave(metrics []models.Metrics) error {
+	if len(metrics) == 0 {
+		return nil
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, m := range metrics {
+		if _, ok := s.Metrics[m.MType]; !ok {
+			s.Metrics[m.MType] = make(map[string]models.Metrics)
+		}
+		switch m.MType {
+		case models.Counter:
+			var value int64
+			if curValue, ok := s.Metrics[m.MType][m.ID]; ok {
+				if curValue.Delta != nil {
+					value = *curValue.Delta
+					sum := *m.Delta + value
+					m.Delta = &sum
+				}
+			}
+
+			s.Metrics[m.MType][m.ID] = m
+		default:
+			s.Metrics[m.MType][m.ID] = m
+		}
+	}
+
+	currentInterval := int(s.storeInterval.Load())
+	if currentInterval == 0 {
+		if err := s.Store(); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
 func (s *MemoryStorage) Store() error {
 	s.mu.RLock()
 	metrics := s.Metrics

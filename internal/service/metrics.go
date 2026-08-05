@@ -2,6 +2,7 @@ package service
 
 import (
 	"fmt"
+	"slices"
 	"strconv"
 
 	"github.com/mersikovs/korob.git/internal/logger"
@@ -98,6 +99,10 @@ func (m *MetricService) UpdateMetric(metricType, metricName, metricValue string)
 	return fmt.Errorf("неизвестный тип метрики %s", metricType)
 }
 
+func (m *MetricService) ListMetrics() []string {
+	return m.Repo.GetNamesList()
+}
+
 func (m *MetricService) UpdateMetricFromStruct(metricType, metricName string, metricValue models.Metrics) error {
 
 	switch metricType {
@@ -149,6 +154,44 @@ func (m *MetricService) UpdateMetricFromStruct(metricType, metricName string, me
 	return fmt.Errorf("неизвестный тип метрики %s", metricType)
 }
 
-func (m *MetricService) ListMetrics() []string {
-	return m.Repo.GetNamesList()
+func (m *MetricService) UpdateMetricsFromStruct(metrics []models.Metrics) error {
+	metricsForSave := make([]models.Metrics, 0)
+	allReadyAdd := make(map[string]struct{})
+	counterSum := make(map[string]int64)
+	slices.Reverse(metrics)
+	for _, metric := range metrics {
+		metricType := metric.MType
+		switch metricType {
+		case models.Counter:
+
+			if metric.Delta == nil {
+				m.Logger.Info("не валидная метрика %s", metric.ID)
+				continue
+			}
+
+			counterSum[metric.ID] += *metric.Delta
+		case models.Gauge:
+			if _, find := allReadyAdd[models.Gauge+metric.ID]; find {
+				continue
+			}
+			if metric.Value == nil {
+				m.Logger.Info("не валидная метрика %s", metric.ID)
+				continue
+			}
+			metricsForSave = append(metricsForSave, metric)
+			allReadyAdd[models.Gauge+metric.ID] = struct{}{}
+		}
+	}
+
+	for id, value := range counterSum {
+		m := models.Metrics{
+			ID:    id,
+			Delta: &value,
+			MType: models.Counter,
+			Value: nil,
+		}
+		metricsForSave = append(metricsForSave, m)
+	}
+
+	return m.Repo.BatchSave(metricsForSave)
 }

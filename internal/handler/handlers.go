@@ -211,3 +211,37 @@ func (h *MetricHandler) UpdateMetricFromBody(w http.ResponseWriter, r *http.Requ
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
 }
+
+func (h *MetricHandler) BatchUpdateMetricsFromBody(w http.ResponseWriter, r *http.Request) {
+	if r.Header.Get("Content-Type") != "application/json" {
+		w.WriteHeader(http.StatusUnsupportedMediaType)
+		return
+	}
+
+	var req []models.Metrics
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+
+	if err := decoder.Decode(&req); err != nil {
+		h.metricService.Logger.Info(err.Error())
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	for _, m := range req {
+		if m.ID == "" {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+	}
+
+	serviceErr := h.metricService.UpdateMetricsFromStruct(req)
+	if serviceErr != nil {
+		h.metricService.Logger.Info(serviceErr.Error())
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+}
