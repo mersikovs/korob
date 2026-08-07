@@ -3,11 +3,16 @@ package agent
 import (
 	"bytes"
 	"compress/gzip"
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"net"
 	"net/http"
+	"net/url"
 	"runtime"
 	"runtime/metrics"
+	"strings"
 	"time"
 
 	models "github.com/mersikovs/korob.git/internal/model"
@@ -118,16 +123,41 @@ func Float64Ptr(v float64) *float64 {
 
 func GetCountDiff(oldMetrics, newMetrics map[string]models.Metrics) int {
 	countDiff := 0
-	for key, newValue := range newMetrics {
-		if oldValue, ok := oldMetrics[key]; ok {
-			if newValue.Value != oldValue.Value {
-				countDiff++
-			}
-		} else {
+
+	for key, newMetric := range newMetrics {
+		oldMetric, exists := oldMetrics[key]
+		if !exists {
+			countDiff++
+			continue
+		}
+
+		if !float64PtrEqual(newMetric.Value, oldMetric.Value) ||
+			!int64PtrEqual(newMetric.Delta, oldMetric.Delta) {
 			countDiff++
 		}
 	}
+
 	return countDiff
+}
+
+func float64PtrEqual(a, b *float64) bool {
+	if a == nil && b == nil {
+		return true
+	}
+	if a == nil || b == nil {
+		return false
+	}
+	return *a == *b
+}
+
+func int64PtrEqual(a, b *int64) bool {
+	if a == nil && b == nil {
+		return true
+	}
+	if a == nil || b == nil {
+		return false
+	}
+	return *a == *b
 }
 
 func PostMetrics(baseURL string, metrics map[string]string, metricType string) error {
@@ -218,33 +248,96 @@ func PostMetricsBatch(baseURL string, metrics map[string]models.Metrics) error {
 	if err != nil {
 		return fmt.Errorf("ошибка создания json: %v", err)
 	}
-	var buf bytes.Buffer
-	gz := gzip.NewWriter(&buf)
-	gz.Write(jsonData)
-	gz.Close()
 
-	req, err := http.NewRequest("POST", baseURL, &buf)
-	if err != nil {
-		return err
+	delays := []time.Duration{
+		1 * time.Second,
+		3 * time.Second,
+		5 * time.Second,
 	}
 
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Content-Encoding", "gzip")
-	req.Header.Set("Accept-Encoding", "gzip")
+	retry := 3
+	var lastError error
+	var resp *http.Response
 
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
+	for i := range retry {
+		var buf bytes.Buffer
+		gz := gzip.NewWriter(&buf)
+		gz.Write(jsonData)
+		gz.Close()
+		req, err := http.NewRequest("POST", baseURL, &buf)
+		if err != nil {
+			return err
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Content-Encoding", "gzip")
+		req.Header.Set("Accept-Encoding", "gzip")
+		req.WithContext(ctx)
+		resp, lastError = http.DefaultClient.Do(req)
+		if lastError != nil {
+			if isRetryable(lastError) && i < retry {
+				delay := delays[i]
+				time.Sleep(delay)
+				cancel()
+				continue
+			}
+			cancel()
+			return lastError
+		}
+
+		if resp != nil && resp.Body != nil {
+			resp.Body.Close()
+		}
+		cancel()
+	}
+
+	if lastError != nil {
 		return fmt.Errorf("ошибка отправки метрик: %v", err)
 	}
 	if resp.StatusCode != 200 {
 		return fmt.Errorf("ошибка отправки метрик: %v", resp.Status)
 	}
-	if resp.Body != nil {
-		err := resp.Body.Close()
-		if err != nil {
-			return fmt.Errorf("ошибка закрытия тела ответа для метрики: %v", err)
+
+	return nil
+}
+
+func isRetryable(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	var uerr *url.Error
+	if errors.As(err, &uerr) {
+		if uerr.Err != nil {
+			err = uerr.Err
 		}
 	}
 
-	return nil
+	//  no such host
+	var dnsErr *net.DNSError
+	if errors.As(err, &dnsErr) {
+		return true
+	}
+
+	// сonnection refused
+	var opErr *net.OpError
+	if errors.As(err, &opErr) {
+		msg := strings.ToLower(opErr.Error())
+		if strings.Contains(msg, "connection refused") {
+			return true
+		}
+	}
+
+	// timeout при попытке подключения (dial)
+	var netErr net.Error
+	if errors.As(err, &netErr) {
+		if netErr.Timeout() {
+			msg := strings.ToLower(err.Error())
+			if strings.Contains(msg, "dial") {
+				return true
+			}
+		}
+	}
+
+	return false
 }

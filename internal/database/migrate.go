@@ -6,8 +6,8 @@ import (
 	_ "github.com/golang-migrate/migrate/v4/source/file"
 )
 
-func MigrateUp(dsn string) error {
-	m, err := migrate.New("file://migrations", dsn)
+func MigrateUp(dsn, migrationsPath string) error {
+	m, err := migrate.New(migrationsPath, dsn)
 	if err != nil {
 		return err
 	}

@@ -30,7 +30,7 @@ func main() {
 	}
 
 	if cnf.DatabaseDSN != "" {
-		if err := database.MigrateUp(cnf.DatabaseDSN); err != nil {
+		if err := database.MigrateUp(cnf.DatabaseDSN, "file://migrations"); err != nil {
 			logger.Fatal("Ошибка миграции базы данных:", err)
 		}
 	}

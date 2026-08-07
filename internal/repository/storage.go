@@ -8,8 +8,8 @@ import (
 )
 
 type Storage interface {
-	Get(mType, name string) (models.Metrics, error)
-	GetNamesList() []string
+	Get(ctx context.Context, mType, name string) (models.Metrics, error)
+	GetNamesList(ctx context.Context) ([]string, error)
 	Save(mType, name string, m models.Metrics) error
 	BatchSave(metrics []models.Metrics) error
 }

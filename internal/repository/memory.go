@@ -34,7 +34,7 @@ func NewMemoryStorage(ctx context.Context, cnf *models.ServerConfig, logger logg
 	return &ms, nil
 }
 
-func (s *MemoryStorage) GetNamesList() []string {
+func (s *MemoryStorage) GetNamesList(ctx context.Context) ([]string, error) {
 	s.mu.RLock()
 
 	list := make([]string, 0)
@@ -47,10 +47,10 @@ func (s *MemoryStorage) GetNamesList() []string {
 	s.mu.RUnlock()
 
 	slices.Sort(list)
-	return list
+	return list, nil
 }
 
-func (s *MemoryStorage) Get(mType, name string) (models.Metrics, error) {
+func (s *MemoryStorage) Get(ctx context.Context, mType, name string) (models.Metrics, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	typeMap, ok := s.Metrics[mType]

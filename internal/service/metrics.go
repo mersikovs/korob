@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"fmt"
 	"slices"
 	"strconv"
@@ -22,8 +23,8 @@ func NewMetricService(repo repository.Storage, log logger.Logger) *MetricService
 	}
 }
 
-func (m *MetricService) GetMetric(metricType, metricName string) (string, error) {
-	metric, err := m.Repo.Get(metricType, metricName)
+func (m *MetricService) GetMetric(ctx context.Context, metricType, metricName string) (string, error) {
+	metric, err := m.Repo.Get(ctx, metricType, metricName)
 	if err != nil {
 		return "", fmt.Errorf("неизвестная метрика %s", metricName)
 	}
@@ -46,7 +47,7 @@ func (m *MetricService) GetMetric(metricType, metricName string) (string, error)
 	return "", fmt.Errorf("неизвестный тип метрики %s", metricType)
 }
 
-func (m *MetricService) UpdateMetric(metricType, metricName, metricValue string) error {
+func (m *MetricService) UpdateMetric(ctx context.Context, metricType, metricName, metricValue string) error {
 
 	switch metricType {
 	case models.Counter:
@@ -55,7 +56,7 @@ func (m *MetricService) UpdateMetric(metricType, metricName, metricValue string)
 			return fmt.Errorf("ошибка при обновлении метрики %s: %v", metricName, err)
 		}
 
-		metric, err := m.Repo.Get(metricType, metricName)
+		metric, err := m.Repo.Get(ctx, metricType, metricName)
 		if err != nil {
 			return fmt.Errorf("ошибка при получении метрики %s: %v", metricName, err)
 		}
@@ -99,11 +100,11 @@ func (m *MetricService) UpdateMetric(metricType, metricName, metricValue string)
 	return fmt.Errorf("неизвестный тип метрики %s", metricType)
 }
 
-func (m *MetricService) ListMetrics() []string {
-	return m.Repo.GetNamesList()
+func (m *MetricService) ListMetrics(ctx context.Context) ([]string, error) {
+	return m.Repo.GetNamesList(ctx)
 }
 
-func (m *MetricService) UpdateMetricFromStruct(metricType, metricName string, metricValue models.Metrics) error {
+func (m *MetricService) UpdateMetricFromStruct(ctx context.Context, metricType, metricName string, metricValue models.Metrics) error {
 
 	switch metricType {
 	case models.Counter:
@@ -112,7 +113,7 @@ func (m *MetricService) UpdateMetricFromStruct(metricType, metricName string, me
 			return fmt.Errorf("ошибка при обновлении метрики %s", metricName)
 		}
 
-		metric, err := m.Repo.Get(metricType, metricName)
+		metric, err := m.Repo.Get(ctx, metricType, metricName)
 		if err != nil {
 			return fmt.Errorf("ошибка при получении метрики %s: %v", metricName, err)
 		}

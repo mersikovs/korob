@@ -4,7 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
+	"net/url"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -17,21 +20,19 @@ type PgStorage struct {
 	pool *pgxpool.Pool
 }
 
-func NewPgStorage(ctx context.Context, dns string) (*PgStorage, error) {
-	curPool, err := db.NewPool(ctx, dns)
+func NewPgStorage(ctx context.Context, dsn string) (*PgStorage, error) {
+	curPool, err := db.NewPool(ctx, dsn)
 	if err != nil {
-		curPool.Close()
 		return nil, err
 	}
 	return &PgStorage{pool: curPool}, nil
 }
 
-func (s *PgStorage) GetNamesList() []string {
-	ctx := context.TODO()
+func (s *PgStorage) GetNamesList(ctx context.Context) ([]string, error) {
 	query := `SELECT id FROM metrics`
 	rows, err := s.pool.Query(ctx, query)
 	if err != nil {
-		return []string{}
+		return nil, err
 	}
 	defer rows.Close()
 
@@ -45,14 +46,13 @@ func (s *PgStorage) GetNamesList() []string {
 		return id, nil
 	})
 	if err != nil {
-		return []string{}
+		return nil, err
 	}
 
-	return metrics
+	return metrics, nil
 }
 
-func (s *PgStorage) Get(mType, name string) (models.Metrics, error) {
-	ctx := context.TODO()
+func (s *PgStorage) Get(ctx context.Context, mType, name string) (models.Metrics, error) {
 	query := `SELECT id, type, delta, value  FROM metrics WHERE id = $1 AND type  = $2`
 
 	row := s.pool.QueryRow(ctx, query, name, mType)
@@ -102,7 +102,6 @@ func (s *PgStorage) BatchSave(metrics []models.Metrics) error {
 	if len(metrics) == 0 {
 		return nil
 	}
-	ctx := context.TODO()
 
 	var sb strings.Builder
 	sb.WriteString("INSERT INTO metrics (id, type, delta, value) VALUES ")
@@ -120,23 +119,72 @@ func (s *PgStorage) BatchSave(metrics []models.Metrics) error {
 
 	sb.WriteString(` ON CONFLICT (id, type) DO UPDATE SET
         value = CASE
-            WHEN EXCLUDED.type = 'counter' THEN metrics.value + EXCLUDED.value
             WHEN EXCLUDED.type = 'gauge'   THEN EXCLUDED.value
-            ELSE metrics.value
+            ELSE metrics.value END,
+		delta = CASE 
+			WHEN EXCLUDED.type = 'counter' THEN metrics.delta + EXCLUDED.delta
+			ELSE metrics.delta
         END`)
 
-	_, err := s.pool.Exec(ctx, sb.String(), args...)
-	return err
+	delays := []time.Duration{1 * time.Second, 3 * time.Second, 5 * time.Second}
+	var lastError error
+
+	for i := 0; i <= len(delays); i++ {
+		ctx := context.TODO()
+
+		_, lastError = s.pool.Exec(ctx, sb.String(), args...)
+
+		if isPreExecutionError(lastError) && i < len(delays) {
+			fmt.Printf("Pre-execution ошибка (попытка %d), retry через %v: %v\n",
+				i+1, delays[i], lastError)
+			time.Sleep(delays[i])
+			continue
+		}
+
+		return lastError
+	}
+	return lastError
 }
 
 func (s *PgStorage) Ping(ctx context.Context) error {
 	return s.pool.Ping(ctx)
 }
 
-func (s *PgStorage) Close() error {
-	if s.pool != nil {
-		s.pool.Close()
+func isPreExecutionError(err error) bool {
+	if err == nil {
+		return false
 	}
 
+	var uerr *url.Error
+	if errors.As(err, &uerr) {
+		if uerr.Err == nil {
+			return false
+		}
+		err = uerr.Err
+	}
+
+	var dnsErr *net.DNSError
+	if errors.As(err, &dnsErr) {
+		return true
+	}
+
+	msg := strings.ToLower(err.Error())
+
+	if strings.Contains(msg, "connection refused") {
+		return true
+	}
+
+	if strings.Contains(msg, "dial") && strings.Contains(msg, "timeout") {
+		return true
+	}
+
+	return false
+}
+
+func (s *PgStorage) Close() error {
+	if s.pool == nil {
+		return nil
+	}
+	s.pool.Close()
 	return nil
 }

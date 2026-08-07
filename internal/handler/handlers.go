@@ -48,9 +48,11 @@ func (h *MetricHandler) PingDB(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *MetricHandler) ListMetrics(w http.ResponseWriter, r *http.Request) {
-	metricsNames := h.metricService.ListMetrics()
+	metricsNames, err := h.metricService.ListMetrics(r.Context())
+	var html string
+	if err == nil {
 
-	html := `<!DOCTYPE html>
+		html = `<!DOCTYPE html>
 <html>
 <head><title>Список метрик</title></head>
 <body>
@@ -58,8 +60,8 @@ func (h *MetricHandler) ListMetrics(w http.ResponseWriter, r *http.Request) {
 </body>
 </html>`
 
-	if len(metricsNames) > 0 {
-		html = fmt.Sprintf(`<!DOCTYPE html>
+		if len(metricsNames) > 0 {
+			html = fmt.Sprintf(`<!DOCTYPE html>
 <html>
 <head><title>Список метрик</title></head>
 <body>
@@ -71,11 +73,13 @@ func (h *MetricHandler) ListMetrics(w http.ResponseWriter, r *http.Request) {
 	</ul>
 </body>
 </html>`, strings.Join(metricsNames, "</li> <li>"))
+		}
+
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
-	_, err := w.Write([]byte(html))
+	_, err = w.Write([]byte(html))
 	if err != nil {
 		fmt.Printf("ошибка записи ответа: %v", err)
 	}
@@ -90,7 +94,7 @@ func (h *MetricHandler) GetMetricFromPath(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	value, serviceErr := h.metricService.GetMetric(metricType, metricName)
+	value, serviceErr := h.metricService.GetMetric(r.Context(), metricType, metricName)
 	if serviceErr != nil {
 		w.WriteHeader(http.StatusNotFound)
 		return
@@ -124,7 +128,7 @@ func (h *MetricHandler) FetchMetricFromBody(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	value, serviceErr := h.metricService.GetMetric(req.MType, req.ID)
+	value, serviceErr := h.metricService.GetMetric(r.Context(), req.MType, req.ID)
 	if serviceErr != nil {
 		w.WriteHeader(http.StatusNotFound)
 		return
@@ -170,7 +174,7 @@ func (h *MetricHandler) UpdateMetricFromPath(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	serviceErr := h.metricService.UpdateMetric(metricType, metricName, metricValue)
+	serviceErr := h.metricService.UpdateMetric(r.Context(), metricType, metricName, metricValue)
 	if serviceErr != nil {
 		w.WriteHeader(http.StatusBadRequest)
 		return
@@ -201,7 +205,7 @@ func (h *MetricHandler) UpdateMetricFromBody(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	serviceErr := h.metricService.UpdateMetricFromStruct(req.MType, req.ID, req)
+	serviceErr := h.metricService.UpdateMetricFromStruct(r.Context(), req.MType, req.ID, req)
 	if serviceErr != nil {
 		h.metricService.Logger.Info(serviceErr.Error())
 		w.WriteHeader(http.StatusBadRequest)
