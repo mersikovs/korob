@@ -11,6 +11,7 @@ import (
 	_ "github.com/golang-migrate/migrate/v4/database/postgres"
 	_ "github.com/golang-migrate/migrate/v4/source/file"
 	"github.com/mersikovs/korob.git/internal/database"
+	"github.com/mersikovs/korob.git/internal/logger"
 	models "github.com/mersikovs/korob.git/internal/model"
 	"github.com/stretchr/testify/assert"
 	"github.com/testcontainers/testcontainers-go"
@@ -62,6 +63,11 @@ func TestNewPgStorage_Integration(t *testing.T) {
 		t.Skip("skipping integration test")
 	}
 
+	logger, err := logger.NewZap("info")
+	if err != nil {
+		t.Fatalf("failed to create pg logger: %v", err)
+	}
+
 	_, dsn := setupPostgresContainer(t)
 
 	tests := []struct {
@@ -93,7 +99,7 @@ func TestNewPgStorage_Integration(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			storage, err := NewPgStorage(context.Background(), tt.dsn)
+			storage, err := NewPgStorage(context.Background(), tt.dsn, logger)
 
 			if tt.wantError {
 				if err == nil {
@@ -129,7 +135,12 @@ func TestPgStorage_GetNamesList_TableDriven(t *testing.T) {
 	_, dsn := setupPostgresContainer(t)
 	ctx := context.Background()
 
-	storage, err := NewPgStorage(ctx, dsn)
+	logger, err := logger.NewZap("info")
+	if err != nil {
+		t.Fatalf("failed to create pg logger: %v", err)
+	}
+
+	storage, err := NewPgStorage(ctx, dsn, logger)
 	if err != nil {
 		t.Fatalf("failed to create pg storage: %v", err)
 	}
@@ -223,11 +234,10 @@ func TestPgStorage_GetNamesList_TableDriven(t *testing.T) {
 	}
 }
 
-func int64Ptr(v int64) *int64 {
+func ptr[T any](v T) *T {
 	return &v
 }
 
-// TODO добить кейсы
 func TestPgStorage_Get_TableDriven(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
@@ -236,7 +246,12 @@ func TestPgStorage_Get_TableDriven(t *testing.T) {
 	_, dsn := setupPostgresContainer(t)
 	ctx := context.Background()
 
-	storage, err := NewPgStorage(ctx, dsn)
+	logger, err := logger.NewZap("info")
+	if err != nil {
+		t.Fatalf("failed to create pg logger: %v", err)
+	}
+
+	storage, err := NewPgStorage(ctx, dsn, logger)
 	if err != nil {
 		t.Fatalf("failed to create pg storage: %v", err)
 	}
@@ -248,7 +263,7 @@ func TestPgStorage_Get_TableDriven(t *testing.T) {
 			ID:    "v" + strconv.Itoa(i),
 			MType: models.Counter,
 			Value: nil,
-			Delta: int64Ptr(1),
+			Delta: ptr(int64(1)),
 			Hash:  "",
 		})
 	}
@@ -263,13 +278,13 @@ func TestPgStorage_Get_TableDriven(t *testing.T) {
 		wantErr    bool
 	}{
 		{
-			name:       "one value",
+			name:       "get counter",
 			ctxTimeout: 1 * time.Second,
 			setupData: []models.Metrics{
 				{
 					ID:    "PollCount",
 					MType: models.Counter,
-					Delta: int64Ptr(1),
+					Delta: ptr(int64(1)),
 					Value: nil,
 					Hash:  "",
 				},
@@ -279,7 +294,76 @@ func TestPgStorage_Get_TableDriven(t *testing.T) {
 			wantMetric: models.Metrics{
 				ID:    "PollCount",
 				MType: models.Counter,
-				Delta: int64Ptr(1),
+				Delta: ptr(int64(1)),
+				Value: nil,
+				Hash:  "",
+			},
+			wantErr: false,
+		},
+		{
+			name:       "get Gauge",
+			ctxTimeout: 1 * time.Second,
+			setupData: []models.Metrics{
+				{
+					ID:    "GaugeMetric",
+					MType: models.Gauge,
+					Delta: nil,
+					Value: ptr(float64(0.1)),
+					Hash:  "",
+				},
+			},
+			varType: models.Gauge,
+			varName: "GaugeMetric",
+			wantMetric: models.Metrics{
+				ID:    "GaugeMetric",
+				MType: models.Gauge,
+				Delta: nil,
+				Value: ptr(float64(0.1)),
+				Hash:  "",
+			},
+			wantErr: false,
+		},
+		{
+			name:       "not found name",
+			ctxTimeout: 1 * time.Second,
+			setupData: []models.Metrics{
+				{
+					ID:    "GaugeMetric",
+					MType: models.Gauge,
+					Delta: nil,
+					Value: ptr(float64(0.1)),
+					Hash:  "",
+				},
+			},
+			varType: models.Gauge,
+			varName: "PollCount",
+			wantMetric: models.Metrics{
+				ID:    "",
+				MType: "",
+				Delta: nil,
+				Value: nil,
+				Hash:  "",
+			},
+			wantErr: false,
+		},
+		{
+			name:       "not found type",
+			ctxTimeout: 1 * time.Second,
+			setupData: []models.Metrics{
+				{
+					ID:    "GaugeMetric",
+					MType: models.Gauge,
+					Delta: nil,
+					Value: ptr(float64(0.1)),
+					Hash:  "",
+				},
+			},
+			varType: models.Counter,
+			varName: "GaugeMetric",
+			wantMetric: models.Metrics{
+				ID:    "",
+				MType: "",
+				Delta: nil,
 				Value: nil,
 				Hash:  "",
 			},
@@ -294,7 +378,7 @@ func TestPgStorage_Get_TableDriven(t *testing.T) {
 			wantMetric: models.Metrics{
 				ID:    "PollCount",
 				MType: models.Counter,
-				Delta: int64Ptr(1),
+				Delta: ptr(int64(1)),
 				Value: nil,
 				Hash:  "",
 			},

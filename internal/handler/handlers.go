@@ -1,7 +1,6 @@
 package handler
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -13,10 +12,6 @@ import (
 	"github.com/mersikovs/korob.git/internal/service"
 )
 
-type Pinger interface {
-	Ping(ctx context.Context) error
-}
-
 type MetricHandler struct {
 	metricService *service.MetricService
 }
@@ -26,19 +21,7 @@ func NewMetricHandler(metricService *service.MetricService) *MetricHandler {
 }
 
 func (h *MetricHandler) PingDB(w http.ResponseWriter, r *http.Request) {
-	if h.metricService.Repo == nil {
-		w.WriteHeader(http.StatusInternalServerError)
-		return
-	}
-
-	pinger, ok := h.metricService.Repo.(Pinger)
-	if !ok {
-		w.WriteHeader(http.StatusInternalServerError)
-		return
-	}
-
-	err := pinger.Ping(r.Context())
-
+	err := h.metricService.Ping(r.Context())
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 		return
@@ -81,7 +64,7 @@ func (h *MetricHandler) ListMetrics(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	_, err = w.Write([]byte(html))
 	if err != nil {
-		fmt.Printf("ошибка записи ответа: %v", err)
+		h.metricService.Logger.Info("ошибка записи ответа: %v", err)
 	}
 }
 
@@ -104,7 +87,7 @@ func (h *MetricHandler) GetMetricFromPath(w http.ResponseWriter, r *http.Request
 	w.WriteHeader(http.StatusOK)
 	_, err := w.Write([]byte(value))
 	if err != nil {
-		fmt.Printf("ошибка записи ответа: %v", err)
+		h.metricService.Logger.Info("ошибка записи ответа: %v", err)
 	}
 }
 
@@ -161,7 +144,10 @@ func (h *MetricHandler) FetchMetricFromBody(w http.ResponseWriter, r *http.Reque
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(response)
+	err := json.NewEncoder(w).Encode(response)
+	if err != nil {
+		h.metricService.Logger.Info("ошибка записи ответа: %v", err)
+	}
 }
 
 func (h *MetricHandler) UpdateMetricFromPath(w http.ResponseWriter, r *http.Request) {
@@ -239,7 +225,7 @@ func (h *MetricHandler) BatchUpdateMetricsFromBody(w http.ResponseWriter, r *htt
 		}
 	}
 
-	serviceErr := h.metricService.UpdateMetricsFromStruct(req)
+	serviceErr := h.metricService.UpdateMetricsFromStruct(r.Context(), req)
 	if serviceErr != nil {
 		h.metricService.Logger.Info(serviceErr.Error())
 		w.WriteHeader(http.StatusBadRequest)

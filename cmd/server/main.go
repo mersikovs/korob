@@ -21,12 +21,13 @@ func main() {
 	cnf, err := config.ServerParseConfig(fs, os.Args[1:], config.OSenv{})
 	if err != nil {
 		fmt.Println("Ошибка парсинга параметров")
-		return
+		os.Exit(1)
 	}
 
 	logger, err := logger.NewZap("info")
 	if err != nil {
-		logger.Fatal("Ошибка создания логгера:", err)
+		fmt.Println("Ошибка создания логгера")
+		os.Exit(1)
 	}
 
 	if cnf.DatabaseDSN != "" {
@@ -51,7 +52,11 @@ func main() {
 	}
 
 	if closer, ok := storage.(io.Closer); ok {
-		defer closer.Close()
+		defer func() {
+			if err := closer.Close(); err != nil {
+				logger.Info("Ошибка закрытия хранилища %v", err)
+			}
+		}()
 	}
 	cancel()
 }

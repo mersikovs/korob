@@ -21,10 +21,11 @@ func TestUpdateMetric(t *testing.T) {
 	}
 	ctx := context.Background()
 	logger, err := logger.NewZap("debug")
-	modelStorage, _ := repository.NewStorage(ctx, &cnf, logger)
 	if err != nil {
-		logger.Fatal("Ошибка создания логгера:", err)
+		t.Fatalf("failed to create pg logger: %v", err)
 	}
+	modelStorage, _ := repository.NewStorage(ctx, &cnf, logger)
+
 	service := service.NewMetricService(modelStorage, logger)
 	router := router.NewRouter(service)
 

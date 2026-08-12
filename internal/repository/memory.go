@@ -28,7 +28,10 @@ func NewMemoryStorage(ctx context.Context, cnf *models.ServerConfig, logger logg
 
 	ms.StartPeriodicSave(ctx, cnf.StoreInterval, logger)
 	if cnf.Restore {
-		ms.Restore()
+		err := ms.Restore()
+		if err != nil {
+			logger.Info("произошла ошибка восстановления данных %w", err)
+		}
 	}
 
 	return &ms, nil
@@ -65,7 +68,7 @@ func (s *MemoryStorage) Get(ctx context.Context, mType, name string) (models.Met
 	return metric, nil
 }
 
-func (s *MemoryStorage) Save(mType, name string, m models.Metrics) error {
+func (s *MemoryStorage) Save(ctx context.Context, mType, name string, m models.Metrics) error {
 	s.mu.Lock()
 
 	if _, ok := s.Metrics[mType]; !ok {
@@ -84,7 +87,7 @@ func (s *MemoryStorage) Save(mType, name string, m models.Metrics) error {
 	return nil
 }
 
-func (s *MemoryStorage) BatchSave(metrics []models.Metrics) error {
+func (s *MemoryStorage) BatchSave(ctx context.Context, metrics []models.Metrics) error {
 	if len(metrics) == 0 {
 		return nil
 	}
@@ -203,4 +206,8 @@ func (s *MemoryStorage) StartPeriodicSave(ctx context.Context, interval int, l l
 			}
 		}
 	}()
+}
+
+func (s *MemoryStorage) Ping(_ context.Context) error {
+	return nil
 }

@@ -2,19 +2,14 @@ package repository
 
 import (
 	"errors"
-	"fmt"
-	"net"
-	"net/url"
 	"testing"
 
+	"github.com/jackc/pgerrcode"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/stretchr/testify/assert"
 )
 
 func Test_isPreExecutionError(t *testing.T) {
-	dnsErr := &net.DNSError{
-		Err:  "no such host",
-		Name: "practicum.yandex.ru",
-	}
 
 	tests := []struct {
 		name string // description of this test case
@@ -28,57 +23,55 @@ func Test_isPreExecutionError(t *testing.T) {
 			want: false,
 		},
 		{
-			name: "random error",
-			err:  errors.New("random error"),
+			name: "non-PgError",
+			err:  errors.New("some other error"),
 			want: false,
 		},
 		{
-			name: "dns error",
-			err:  dnsErr,
+			name: "wrapped non-PgError",
+			err:  errors.New("wrap: " + errors.New("other").Error()),
+			want: false,
+		},
+		// Положительные случаи для каждого кода из списка
+		{
+			name: "ConnectionException",
+			err:  &pgconn.PgError{Code: pgerrcode.ConnectionException},
 			want: true,
 		},
 		{
-			name: "wrapped dns error",
-			err:  fmt.Errorf("request failed: %w", dnsErr),
+			name: "SQLClientUnableToEstablishSQLConnection",
+			err:  &pgconn.PgError{Code: pgerrcode.SQLClientUnableToEstablishSQLConnection},
 			want: true,
 		},
 		{
-			name: "url error with dns error",
-			err: &url.Error{
-				Op:  "Get",
-				URL: "http://example.com",
-				Err: dnsErr,
-			},
+			name: "ConnectionDoesNotExist",
+			err:  &pgconn.PgError{Code: pgerrcode.ConnectionDoesNotExist},
 			want: true,
 		},
 		{
-			name: "connection refused",
-			err:  errors.New("dial tcp 127.0.0.1:5432: connect: connection refused"),
+			name: "ConnectionFailure",
+			err:  &pgconn.PgError{Code: pgerrcode.ConnectionFailure},
 			want: true,
 		},
 		{
-			name: "connection refused in different case",
-			err:  errors.New("Connection Refused"),
+			name: "TransactionResolutionUnknown",
+			err:  &pgconn.PgError{Code: pgerrcode.TransactionResolutionUnknown},
 			want: true,
 		},
 		{
-			name: "dial timeout",
-			err:  errors.New("dial tcp 10.0.0.1:5432: i/o timeout"),
+			name: "ProtocolViolation",
+			err:  &pgconn.PgError{Code: pgerrcode.ProtocolViolation},
 			want: true,
 		},
+		// Отрицательный случай с кодом, не входящим в список
 		{
-			name: "dial only",
-			err:  errors.New("dial"),
+			name: "DuplicateKey (not pre-execution)",
+			err:  &pgconn.PgError{Code: pgerrcode.UniqueViolation}, // 23505
 			want: false,
 		},
 		{
-			name: "timeout only",
-			err:  errors.New("timeout"),
-			want: false,
-		},
-		{
-			name: "connection reset by peer",
-			err:  errors.New("connection reset by peer"),
+			name: "another random PgError code",
+			err:  &pgconn.PgError{Code: "12345"},
 			want: false,
 		},
 	}

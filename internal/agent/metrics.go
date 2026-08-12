@@ -5,18 +5,18 @@ import (
 	"compress/gzip"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
-	"net"
 	"net/http"
-	"net/url"
 	"runtime"
 	"runtime/metrics"
-	"strings"
 	"time"
 
 	models "github.com/mersikovs/korob.git/internal/model"
 )
+
+type Sender interface {
+	Do(req *http.Request) (*http.Response, error)
+}
 
 // AI генерация кода DirectMapping:
 var DirectMapping = map[string]string{
@@ -200,12 +200,17 @@ func PostMetricsJSON(baseURL string, metrics map[string]models.Metrics) error {
 
 		var buf bytes.Buffer
 		gz := gzip.NewWriter(&buf)
-		gz.Write(jsonData)
-		gz.Close()
+		if _, err = gz.Write(jsonData); err != nil {
+			return fmt.Errorf("ошибка записи gzip: %w", err)
+		}
+
+		if err = gz.Close(); err != nil {
+			return fmt.Errorf("ошибка закрытия gz: %w", err)
+		}
 
 		req, err := http.NewRequest("POST", baseURL, &buf)
 		if err != nil {
-			return err
+			return fmt.Errorf("ошибка создания запроса: %w", err)
 		}
 
 		req.Header.Set("Content-Type", "application/json")
@@ -237,7 +242,7 @@ func PostMetricsJSON(baseURL string, metrics map[string]models.Metrics) error {
 	return nil
 }
 
-func PostMetricsBatch(baseURL string, metrics map[string]models.Metrics) error {
+func PostMetricsBatch(sender Sender, baseURL string, metrics map[string]models.Metrics) error {
 	metricsSlice := make([]models.Metrics, 0)
 	for _, v := range metrics {
 		metricsSlice = append(metricsSlice, v)
@@ -249,49 +254,36 @@ func PostMetricsBatch(baseURL string, metrics map[string]models.Metrics) error {
 		return fmt.Errorf("ошибка создания json: %v", err)
 	}
 
-	delays := []time.Duration{
-		1 * time.Second,
-		3 * time.Second,
-		5 * time.Second,
-	}
-
-	retry := 3
-	var lastError error
 	var resp *http.Response
 
-	for i := range retry {
-		var buf bytes.Buffer
-		gz := gzip.NewWriter(&buf)
-		gz.Write(jsonData)
-		gz.Close()
-		req, err := http.NewRequest("POST", baseURL, &buf)
-		if err != nil {
-			return err
-		}
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("Content-Encoding", "gzip")
-		req.Header.Set("Accept-Encoding", "gzip")
-		req.WithContext(ctx)
-		resp, lastError = http.DefaultClient.Do(req)
-		if lastError != nil {
-			if isRetryable(lastError) && i < retry {
-				delay := delays[i]
-				time.Sleep(delay)
-				cancel()
-				continue
-			}
-			cancel()
-			return lastError
-		}
-
-		if resp != nil && resp.Body != nil {
-			resp.Body.Close()
-		}
-		cancel()
+	var buf bytes.Buffer
+	gz := gzip.NewWriter(&buf)
+	if _, err = gz.Write(jsonData); err != nil {
+		return fmt.Errorf("ошибка записи gzip: %w", err)
 	}
 
-	if lastError != nil {
+	if err = gz.Close(); err != nil {
+		return fmt.Errorf("ошибка закрытия gz: %w", err)
+	}
+	req, err := http.NewRequest("POST", baseURL, &buf)
+	if err != nil {
+		return fmt.Errorf("ошибка создания запроса: %w", err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Content-Encoding", "gzip")
+	req.Header.Set("Accept-Encoding", "gzip")
+	req = req.WithContext(ctx)
+
+	resp, err = sender.Do(req)
+	if resp != nil && resp.Body != nil {
+		if err := resp.Body.Close(); err != nil {
+			return fmt.Errorf("ошибка закрытия тела запроса %w", err)
+		}
+	}
+
+	if err != nil {
 		return fmt.Errorf("ошибка отправки метрик: %v", err)
 	}
 	if resp.StatusCode != 200 {
@@ -299,45 +291,4 @@ func PostMetricsBatch(baseURL string, metrics map[string]models.Metrics) error {
 	}
 
 	return nil
-}
-
-func isRetryable(err error) bool {
-	if err == nil {
-		return false
-	}
-
-	var uerr *url.Error
-	if errors.As(err, &uerr) {
-		if uerr.Err != nil {
-			err = uerr.Err
-		}
-	}
-
-	//  no such host
-	var dnsErr *net.DNSError
-	if errors.As(err, &dnsErr) {
-		return true
-	}
-
-	// сonnection refused
-	var opErr *net.OpError
-	if errors.As(err, &opErr) {
-		msg := strings.ToLower(opErr.Error())
-		if strings.Contains(msg, "connection refused") {
-			return true
-		}
-	}
-
-	// timeout при попытке подключения (dial)
-	var netErr net.Error
-	if errors.As(err, &netErr) {
-		if netErr.Timeout() {
-			msg := strings.ToLower(err.Error())
-			if strings.Contains(msg, "dial") {
-				return true
-			}
-		}
-	}
-
-	return false
 }

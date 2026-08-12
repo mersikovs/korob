@@ -4,28 +4,31 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net"
-	"net/url"
 	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/mersikovs/korob.git/internal/config/db"
+	"github.com/mersikovs/korob.git/internal/logger"
 	models "github.com/mersikovs/korob.git/internal/model"
+
+	"github.com/jackc/pgerrcode"
 )
 
 type PgStorage struct {
-	pool *pgxpool.Pool
+	pool   *pgxpool.Pool
+	logger logger.Logger
 }
 
-func NewPgStorage(ctx context.Context, dsn string) (*PgStorage, error) {
+func NewPgStorage(ctx context.Context, dsn string, l logger.Logger) (*PgStorage, error) {
 	curPool, err := db.NewPool(ctx, dsn)
 	if err != nil {
 		return nil, err
 	}
-	return &PgStorage{pool: curPool}, nil
+	return &PgStorage{pool: curPool, logger: l}, nil
 }
 
 func (s *PgStorage) GetNamesList(ctx context.Context) ([]string, error) {
@@ -80,8 +83,7 @@ func (s *PgStorage) Get(ctx context.Context, mType, name string) (models.Metrics
 	return m, nil
 }
 
-func (s *PgStorage) Save(mType, name string, m models.Metrics) error {
-	ctx := context.TODO()
+func (s *PgStorage) Save(ctx context.Context, mType, name string, m models.Metrics) error {
 	query := `
         INSERT INTO metrics (id, type, delta, value)
         VALUES ($1, $2, $3, $4)
@@ -98,7 +100,7 @@ func (s *PgStorage) Save(mType, name string, m models.Metrics) error {
 	return nil
 }
 
-func (s *PgStorage) BatchSave(metrics []models.Metrics) error {
+func (s *PgStorage) BatchSave(ctx context.Context, metrics []models.Metrics) error {
 	if len(metrics) == 0 {
 		return nil
 	}
@@ -130,12 +132,10 @@ func (s *PgStorage) BatchSave(metrics []models.Metrics) error {
 	var lastError error
 
 	for i := 0; i <= len(delays); i++ {
-		ctx := context.TODO()
-
 		_, lastError = s.pool.Exec(ctx, sb.String(), args...)
 
 		if isPreExecutionError(lastError) && i < len(delays) {
-			fmt.Printf("Pre-execution ошибка (попытка %d), retry через %v: %v\n",
+			s.logger.Info("Pre-execution ошибка (попытка %d), retry через %v: %v\n",
 				i+1, delays[i], lastError)
 			time.Sleep(delays[i])
 			continue
@@ -155,27 +155,17 @@ func isPreExecutionError(err error) bool {
 		return false
 	}
 
-	var uerr *url.Error
-	if errors.As(err, &uerr) {
-		if uerr.Err == nil {
-			return false
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) {
+		switch pgErr.Code {
+		case pgerrcode.ConnectionException,
+			pgerrcode.SQLClientUnableToEstablishSQLConnection,
+			pgerrcode.ConnectionDoesNotExist,
+			pgerrcode.ConnectionFailure,
+			pgerrcode.TransactionResolutionUnknown,
+			pgerrcode.ProtocolViolation:
+			return true
 		}
-		err = uerr.Err
-	}
-
-	var dnsErr *net.DNSError
-	if errors.As(err, &dnsErr) {
-		return true
-	}
-
-	msg := strings.ToLower(err.Error())
-
-	if strings.Contains(msg, "connection refused") {
-		return true
-	}
-
-	if strings.Contains(msg, "dial") && strings.Contains(msg, "timeout") {
-		return true
 	}
 
 	return false

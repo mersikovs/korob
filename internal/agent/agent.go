@@ -18,14 +18,16 @@ type Agent struct {
 	lastMetrics map[string]models.Metrics
 	pollCount   int
 	cnf         *config.Config
+	client      Sender
 	mu          sync.RWMutex
 }
 
-func NewAgent(cnf *config.Config) *Agent {
+func NewAgent(cnf *config.Config, transport Sender) *Agent {
 	return &Agent{
 		cnf:         cnf,
 		lastMetrics: make(map[string]models.Metrics),
 		pollCount:   0,
+		client:      transport,
 	}
 }
 
@@ -82,7 +84,7 @@ func (a *Agent) sendRuntimeMetrics() {
 				Delta: int64Ptr(int64(pollCount)),
 			}
 
-			err := PostMetricsBatch(updateURL, lastMetrics)
+			err := PostMetricsBatch(a.client, updateURL, lastMetrics)
 			if err != nil {
 				fmt.Println("Произошли ошибки при отправке метрик:", err)
 			}

@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"strconv"
@@ -11,20 +12,24 @@ import (
 	"github.com/mersikovs/korob.git/internal/repository"
 )
 
+type Pinger interface {
+	Ping(ctx context.Context) error
+}
+
 type MetricService struct {
-	Repo   repository.Storage
+	repo   repository.Storage
 	Logger logger.Logger
 }
 
 func NewMetricService(repo repository.Storage, log logger.Logger) *MetricService {
 	return &MetricService{
-		Repo:   repo,
+		repo:   repo,
 		Logger: log,
 	}
 }
 
 func (m *MetricService) GetMetric(ctx context.Context, metricType, metricName string) (string, error) {
-	metric, err := m.Repo.Get(ctx, metricType, metricName)
+	metric, err := m.repo.Get(ctx, metricType, metricName)
 	if err != nil {
 		return "", fmt.Errorf("неизвестная метрика %s", metricName)
 	}
@@ -56,7 +61,7 @@ func (m *MetricService) UpdateMetric(ctx context.Context, metricType, metricName
 			return fmt.Errorf("ошибка при обновлении метрики %s: %v", metricName, err)
 		}
 
-		metric, err := m.Repo.Get(ctx, metricType, metricName)
+		metric, err := m.repo.Get(ctx, metricType, metricName)
 		if err != nil {
 			return fmt.Errorf("ошибка при получении метрики %s: %v", metricName, err)
 		}
@@ -65,7 +70,7 @@ func (m *MetricService) UpdateMetric(ctx context.Context, metricType, metricName
 			counter += *metric.Delta
 		}
 
-		err = m.Repo.Save(metricType, metricName, models.Metrics{
+		err = m.repo.Save(ctx, metricType, metricName, models.Metrics{
 			ID:    metricName,
 			MType: metricType,
 			Delta: &counter,
@@ -83,7 +88,7 @@ func (m *MetricService) UpdateMetric(ctx context.Context, metricType, metricName
 			return fmt.Errorf("ошибка при обновлении метрики %s: %v", metricName, err)
 		}
 
-		err = m.Repo.Save(metricType, metricName, models.Metrics{
+		err = m.repo.Save(ctx, metricType, metricName, models.Metrics{
 			ID:    metricName,
 			MType: metricType,
 			Delta: nil,
@@ -101,7 +106,7 @@ func (m *MetricService) UpdateMetric(ctx context.Context, metricType, metricName
 }
 
 func (m *MetricService) ListMetrics(ctx context.Context) ([]string, error) {
-	return m.Repo.GetNamesList(ctx)
+	return m.repo.GetNamesList(ctx)
 }
 
 func (m *MetricService) UpdateMetricFromStruct(ctx context.Context, metricType, metricName string, metricValue models.Metrics) error {
@@ -113,7 +118,7 @@ func (m *MetricService) UpdateMetricFromStruct(ctx context.Context, metricType, 
 			return fmt.Errorf("ошибка при обновлении метрики %s", metricName)
 		}
 
-		metric, err := m.Repo.Get(ctx, metricType, metricName)
+		metric, err := m.repo.Get(ctx, metricType, metricName)
 		if err != nil {
 			return fmt.Errorf("ошибка при получении метрики %s: %v", metricName, err)
 		}
@@ -126,7 +131,7 @@ func (m *MetricService) UpdateMetricFromStruct(ctx context.Context, metricType, 
 			counter = counter + *metricValue.Delta
 		}
 
-		err = m.Repo.Save(metricType, metricName, models.Metrics{
+		err = m.repo.Save(ctx, metricType, metricName, models.Metrics{
 			ID:    metricName,
 			MType: metricType,
 			Delta: &counter,
@@ -139,7 +144,7 @@ func (m *MetricService) UpdateMetricFromStruct(ctx context.Context, metricType, 
 		return nil
 	case models.Gauge:
 
-		err := m.Repo.Save(metricType, metricName, models.Metrics{
+		err := m.repo.Save(ctx, metricType, metricName, models.Metrics{
 			ID:    metricName,
 			MType: metricType,
 			Value: metricValue.Value,
@@ -155,7 +160,7 @@ func (m *MetricService) UpdateMetricFromStruct(ctx context.Context, metricType, 
 	return fmt.Errorf("неизвестный тип метрики %s", metricType)
 }
 
-func (m *MetricService) UpdateMetricsFromStruct(metrics []models.Metrics) error {
+func (m *MetricService) UpdateMetricsFromStruct(ctx context.Context, metrics []models.Metrics) error {
 	metricsForSave := make([]models.Metrics, 0)
 	allReadyAdd := make(map[string]struct{})
 	counterSum := make(map[string]int64)
@@ -194,5 +199,18 @@ func (m *MetricService) UpdateMetricsFromStruct(metrics []models.Metrics) error 
 		metricsForSave = append(metricsForSave, m)
 	}
 
-	return m.Repo.BatchSave(metricsForSave)
+	return m.repo.BatchSave(ctx, metricsForSave)
+}
+
+func (m *MetricService) Ping(ctx context.Context) error {
+	if m.repo == nil {
+		return errors.New("metric repository is nil")
+	}
+
+	pinger, ok := m.repo.(Pinger)
+	if !ok {
+		return nil
+	}
+
+	return pinger.Ping(ctx)
 }
