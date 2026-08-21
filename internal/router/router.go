@@ -16,6 +16,8 @@ func NewRouter(service *service.MetricService) *chi.Mux {
 	r.Use(middleware.GzipResponseMiddleware)
 	r.Use(middleware.GzipRequestMiddleware)
 
+	//Сервисный эндпоинт
+	r.Get("/ping", metricHandler.PingDB)
 	//Получить метрики
 	r.Get("/", metricHandler.ListMetrics)
 	r.Get("/value/{type}/{name}", metricHandler.GetMetricFromPath)
@@ -23,6 +25,7 @@ func NewRouter(service *service.MetricService) *chi.Mux {
 	//Обновить метрики
 	r.Post("/update/{type}/{name}/{value}", metricHandler.UpdateMetricFromPath)
 	r.Post("/update/", metricHandler.UpdateMetricFromBody)
+	r.Post("/updates/", metricHandler.BatchUpdateMetricsFromBody)
 
 	return r
 }

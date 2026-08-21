@@ -78,7 +78,9 @@ func GzipResponseMiddleware(next http.Handler) http.Handler {
 		}
 
 		cw := newCompressWriter(w)
-		defer cw.Close()
+		defer func() {
+			_ = cw.Close()
+		}()
 
 		next.ServeHTTP(cw, r)
 	})

@@ -3,19 +3,15 @@ package config
 import (
 	"flag"
 	"strconv"
+
+	models "github.com/mersikovs/korob.git/internal/model"
 )
 
-type ServerConfig struct {
-	Address         string
-	StoreInterval   int
-	FileStoragePath string
-	Restore         bool
-}
-
-func ServerParseConfig(fs *flag.FlagSet, args []string, env EnvSource) (*ServerConfig, error) {
-	cnf := &ServerConfig{}
+func ServerParseConfig(fs *flag.FlagSet, args []string, env EnvSource) (*models.ServerConfig, error) {
+	cnf := &models.ServerConfig{}
 
 	fs.StringVar(&cnf.Address, "a", "localhost:8080", "адрес эндпоинта HTTP-сервера")
+	fs.StringVar(&cnf.DatabaseDSN, "d", "", "строка подключения к БД (DSN)")
 	fs.IntVar(&cnf.StoreInterval, "i", 300, "интервал времени в секундах, по истечении которого текущие показания сервера сохраняются на диск")
 	fs.StringVar(&cnf.FileStoragePath, "f", "store.back", "путь до файла, куда сохраняются текущие значения")
 	fs.BoolVar(&cnf.Restore, "r", false, "следует ли загружать ранее сохранённые значения")
@@ -26,6 +22,10 @@ func ServerParseConfig(fs *flag.FlagSet, args []string, env EnvSource) (*ServerC
 
 	if addr, exists := env.LookupEnv("ADDRESS"); exists && addr != "" {
 		cnf.Address = addr
+	}
+
+	if dsn, exists := env.LookupEnv("DATABASE_DSN"); exists && dsn != "" {
+		cnf.DatabaseDSN = dsn
 	}
 
 	if si, exists := env.LookupEnv("STORE_INTERVAL"); exists {

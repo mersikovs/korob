@@ -4,12 +4,14 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 
 	"github.com/mersikovs/korob.git/internal/config"
+	"github.com/mersikovs/korob.git/internal/database"
 	"github.com/mersikovs/korob.git/internal/logger"
-	models "github.com/mersikovs/korob.git/internal/model"
+	"github.com/mersikovs/korob.git/internal/repository"
 	"github.com/mersikovs/korob.git/internal/router"
 	"github.com/mersikovs/korob.git/internal/service"
 )
@@ -19,28 +21,42 @@ func main() {
 	cnf, err := config.ServerParseConfig(fs, os.Args[1:], config.OSenv{})
 	if err != nil {
 		fmt.Println("Ошибка парсинга параметров")
-		return
+		os.Exit(1)
 	}
 
 	logger, err := logger.NewZap("info")
 	if err != nil {
-		logger.Fatal("Ошибка создания логгера:", err)
+		fmt.Println("Ошибка создания логгера")
+		os.Exit(1)
+	}
+
+	if cnf.DatabaseDSN != "" {
+		if err := database.MigrateUp(cnf.DatabaseDSN, "file://migrations"); err != nil {
+			logger.Fatal("Ошибка миграции базы данных:", err)
+		}
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
-	modelStorage := models.NewStorage(cnf.FileStoragePath)
-	modelStorage.StartPeriodicSave(ctx, cnf.StoreInterval, logger)
-	if cnf.Restore {
-		modelStorage.Restore()
-	}
 
-	service := service.NewMetricService(modelStorage, logger)
+	storage, err := repository.NewStorage(ctx, cnf, logger)
+	if err != nil {
+		logger.Fatal("Ошибка создания объекта хранилища:", err)
+	}
+	service := service.NewMetricService(storage, logger)
 
 	router := router.NewRouter(service)
 
 	err = http.ListenAndServe(cnf.Address, router)
 	if err != nil {
 		logger.Fatal("Ошибка запуска сервера:", err)
+	}
+
+	if closer, ok := storage.(io.Closer); ok {
+		defer func() {
+			if err := closer.Close(); err != nil {
+				logger.Info("Ошибка закрытия хранилища %v", err)
+			}
+		}()
 	}
 	cancel()
 }

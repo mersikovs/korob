@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/mersikovs/korob.git/internal/config"
+	models "github.com/mersikovs/korob.git/internal/model"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -14,7 +15,7 @@ func TestServerParseConfig(t *testing.T) {
 		fs      *flag.FlagSet
 		args    []string
 		env     config.EnvSource
-		want    *config.ServerConfig
+		want    *models.ServerConfig
 		wantErr bool
 	}{
 		{
@@ -22,7 +23,7 @@ func TestServerParseConfig(t *testing.T) {
 			fs:   flag.NewFlagSet("server_test", flag.ContinueOnError),
 			args: []string{},
 			env:  FakeEnv{},
-			want: &config.ServerConfig{
+			want: &models.ServerConfig{
 				Address:         "localhost:8080",
 				StoreInterval:   300,
 				FileStoragePath: "store.back",
@@ -34,7 +35,7 @@ func TestServerParseConfig(t *testing.T) {
 			fs:   flag.NewFlagSet("server_test", flag.ContinueOnError),
 			args: []string{"-a", "192.168.1.1:8080", "-i", "50", "-f", "file.backup", "-r", "true"},
 			env:  FakeEnv{},
-			want: &config.ServerConfig{
+			want: &models.ServerConfig{
 				Address:         "192.168.1.1:8080",
 				StoreInterval:   50,
 				FileStoragePath: "file.backup",
@@ -51,7 +52,7 @@ func TestServerParseConfig(t *testing.T) {
 				"FILE_STORAGE_PATH": "env.backup",
 				"RESTORE":           "false",
 			},
-			want: &config.ServerConfig{
+			want: &models.ServerConfig{
 				Address:         "192.168.1.1:8081",
 				StoreInterval:   100,
 				FileStoragePath: "env.backup",
@@ -68,7 +69,7 @@ func TestServerParseConfig(t *testing.T) {
 				"FILE_STORAGE_PATH": "env2.backup",
 				"RESTORE":           "true",
 			},
-			want: &config.ServerConfig{
+			want: &models.ServerConfig{
 				Address:         "192.168.1.1:8082",
 				StoreInterval:   150,
 				FileStoragePath: "env2.backup",
@@ -85,7 +86,7 @@ func TestServerParseConfig(t *testing.T) {
 				"FILE_STORAGE_PATH": "2",
 				"RESTORE":           "true",
 			},
-			want: &config.ServerConfig{
+			want: &models.ServerConfig{
 				Address:         "localhost:8080",
 				StoreInterval:   300,
 				FileStoragePath: "store.back",
@@ -103,7 +104,7 @@ func TestServerParseConfig(t *testing.T) {
 				"FILE_STORAGE_PATH": "",
 				"RESTORE":           "",
 			},
-			want: &config.ServerConfig{
+			want: &models.ServerConfig{
 				Address:         "192.168.1.1:8080",
 				StoreInterval:   50,
 				FileStoragePath: "",
@@ -117,7 +118,7 @@ func TestServerParseConfig(t *testing.T) {
 			env: FakeEnv{
 				"ADDRESS": "192.168.1.1:8080",
 			},
-			want: &config.ServerConfig{
+			want: &models.ServerConfig{
 				Address:         "192.168.1.1:8080",
 				StoreInterval:   300,
 				FileStoragePath: "store.back",
@@ -131,7 +132,7 @@ func TestServerParseConfig(t *testing.T) {
 			env: FakeEnv{
 				"ADDRESS": "192.168.1.1:8080",
 			},
-			want: &config.ServerConfig{
+			want: &models.ServerConfig{
 				Address:         "192.168.1.1:8080",
 				StoreInterval:   300,
 				FileStoragePath: "file.backup",

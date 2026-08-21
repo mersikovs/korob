@@ -104,7 +104,10 @@ func TestLogger(t *testing.T) {
 					if testreq.handlerStatus != 0 {
 						w.WriteHeader(testreq.handlerStatus)
 					}
-					w.Write([]byte(testreq.handlerBody))
+					if _, err := w.Write([]byte(testreq.handlerBody)); err != nil {
+						t.Fatalf("error write handler body")
+					}
+
 				})
 
 				wrapped := middleware.Logger(log)(handler)

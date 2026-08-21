@@ -47,7 +47,9 @@ func GzipRequestMiddleware(next http.Handler) http.Handler {
 		}
 
 		r.Body = cr
-		defer cr.Close()
+		defer func() {
+			_ = cr.Close()
+		}()
 
 		next.ServeHTTP(w, r)
 	})

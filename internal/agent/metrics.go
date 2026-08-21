@@ -3,6 +3,7 @@ package agent
 import (
 	"bytes"
 	"compress/gzip"
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -12,6 +13,10 @@ import (
 
 	models "github.com/mersikovs/korob.git/internal/model"
 )
+
+type Sender interface {
+	Do(req *http.Request) (*http.Response, error)
+}
 
 // AI генерация кода DirectMapping:
 var DirectMapping = map[string]string{
@@ -118,16 +123,41 @@ func Float64Ptr(v float64) *float64 {
 
 func GetCountDiff(oldMetrics, newMetrics map[string]models.Metrics) int {
 	countDiff := 0
-	for key, newValue := range newMetrics {
-		if oldValue, ok := oldMetrics[key]; ok {
-			if newValue.Value != oldValue.Value {
-				countDiff++
-			}
-		} else {
+
+	for key, newMetric := range newMetrics {
+		oldMetric, exists := oldMetrics[key]
+		if !exists {
+			countDiff++
+			continue
+		}
+
+		if !float64PtrEqual(newMetric.Value, oldMetric.Value) ||
+			!int64PtrEqual(newMetric.Delta, oldMetric.Delta) {
 			countDiff++
 		}
 	}
+
 	return countDiff
+}
+
+func float64PtrEqual(a, b *float64) bool {
+	if a == nil && b == nil {
+		return true
+	}
+	if a == nil || b == nil {
+		return false
+	}
+	return *a == *b
+}
+
+func int64PtrEqual(a, b *int64) bool {
+	if a == nil && b == nil {
+		return true
+	}
+	if a == nil || b == nil {
+		return false
+	}
+	return *a == *b
 }
 
 func PostMetrics(baseURL string, metrics map[string]string, metricType string) error {
@@ -170,12 +200,17 @@ func PostMetricsJSON(baseURL string, metrics map[string]models.Metrics) error {
 
 		var buf bytes.Buffer
 		gz := gzip.NewWriter(&buf)
-		gz.Write(jsonData)
-		gz.Close()
+		if _, err = gz.Write(jsonData); err != nil {
+			return fmt.Errorf("ошибка записи gzip: %w", err)
+		}
+
+		if err = gz.Close(); err != nil {
+			return fmt.Errorf("ошибка закрытия gz: %w", err)
+		}
 
 		req, err := http.NewRequest("POST", baseURL, &buf)
 		if err != nil {
-			return err
+			return fmt.Errorf("ошибка создания запроса: %w", err)
 		}
 
 		req.Header.Set("Content-Type", "application/json")
@@ -204,5 +239,56 @@ func PostMetricsJSON(baseURL string, metrics map[string]models.Metrics) error {
 	if len(errs) > 0 {
 		return fmt.Errorf("ошибки отправки метрик: %v", errs)
 	}
+	return nil
+}
+
+func PostMetricsBatch(sender Sender, baseURL string, metrics map[string]models.Metrics) error {
+	metricsSlice := make([]models.Metrics, 0)
+	for _, v := range metrics {
+		metricsSlice = append(metricsSlice, v)
+	}
+
+	jsonData, err := json.Marshal(metricsSlice)
+
+	if err != nil {
+		return fmt.Errorf("ошибка создания json: %v", err)
+	}
+
+	var resp *http.Response
+
+	var buf bytes.Buffer
+	gz := gzip.NewWriter(&buf)
+	if _, err = gz.Write(jsonData); err != nil {
+		return fmt.Errorf("ошибка записи gzip: %w", err)
+	}
+
+	if err = gz.Close(); err != nil {
+		return fmt.Errorf("ошибка закрытия gz: %w", err)
+	}
+	req, err := http.NewRequest("POST", baseURL, &buf)
+	if err != nil {
+		return fmt.Errorf("ошибка создания запроса: %w", err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Content-Encoding", "gzip")
+	req.Header.Set("Accept-Encoding", "gzip")
+	req = req.WithContext(ctx)
+
+	resp, err = sender.Do(req)
+	if resp != nil && resp.Body != nil {
+		if err := resp.Body.Close(); err != nil {
+			return fmt.Errorf("ошибка закрытия тела запроса %w", err)
+		}
+	}
+
+	if err != nil {
+		return fmt.Errorf("ошибка отправки метрик: %v", err)
+	}
+	if resp.StatusCode != 200 {
+		return fmt.Errorf("ошибка отправки метрик: %v", resp.Status)
+	}
+
 	return nil
 }

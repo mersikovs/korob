@@ -52,7 +52,7 @@ func TestGetCountDiff(t *testing.T) {
 			newMetrics: map[string]models.Metrics{
 				"metric": {
 					ID:    "metric",
-					Value: Float64Ptr(1),
+					Value: Float64Ptr(2),
 				},
 			},
 			want: 1,

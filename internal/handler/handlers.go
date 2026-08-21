@@ -20,10 +20,22 @@ func NewMetricHandler(metricService *service.MetricService) *MetricHandler {
 	return &MetricHandler{metricService: metricService}
 }
 
-func (h *MetricHandler) ListMetrics(w http.ResponseWriter, r *http.Request) {
-	metricsNames := h.metricService.ListMetrics()
+func (h *MetricHandler) PingDB(w http.ResponseWriter, r *http.Request) {
+	err := h.metricService.Ping(r.Context())
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+}
 
-	html := `<!DOCTYPE html>
+func (h *MetricHandler) ListMetrics(w http.ResponseWriter, r *http.Request) {
+	metricsNames, err := h.metricService.ListMetrics(r.Context())
+	var html string
+	if err == nil {
+
+		html = `<!DOCTYPE html>
 <html>
 <head><title>Список метрик</title></head>
 <body>
@@ -31,8 +43,8 @@ func (h *MetricHandler) ListMetrics(w http.ResponseWriter, r *http.Request) {
 </body>
 </html>`
 
-	if len(metricsNames) > 0 {
-		html = fmt.Sprintf(`<!DOCTYPE html>
+		if len(metricsNames) > 0 {
+			html = fmt.Sprintf(`<!DOCTYPE html>
 <html>
 <head><title>Список метрик</title></head>
 <body>
@@ -44,13 +56,15 @@ func (h *MetricHandler) ListMetrics(w http.ResponseWriter, r *http.Request) {
 	</ul>
 </body>
 </html>`, strings.Join(metricsNames, "</li> <li>"))
+		}
+
 	}
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
-	_, err := w.Write([]byte(html))
+	_, err = w.Write([]byte(html))
 	if err != nil {
-		fmt.Printf("ошибка записи ответа: %v", err)
+		h.metricService.Logger.Info("ошибка записи ответа: %v", err)
 	}
 }
 
@@ -63,7 +77,7 @@ func (h *MetricHandler) GetMetricFromPath(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	value, serviceErr := h.metricService.GetMetric(metricType, metricName)
+	value, serviceErr := h.metricService.GetMetric(r.Context(), metricType, metricName)
 	if serviceErr != nil {
 		w.WriteHeader(http.StatusNotFound)
 		return
@@ -73,7 +87,7 @@ func (h *MetricHandler) GetMetricFromPath(w http.ResponseWriter, r *http.Request
 	w.WriteHeader(http.StatusOK)
 	_, err := w.Write([]byte(value))
 	if err != nil {
-		fmt.Printf("ошибка записи ответа: %v", err)
+		h.metricService.Logger.Info("ошибка записи ответа: %v", err)
 	}
 }
 
@@ -97,7 +111,7 @@ func (h *MetricHandler) FetchMetricFromBody(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	value, serviceErr := h.metricService.GetMetric(req.MType, req.ID)
+	value, serviceErr := h.metricService.GetMetric(r.Context(), req.MType, req.ID)
 	if serviceErr != nil {
 		w.WriteHeader(http.StatusNotFound)
 		return
@@ -130,7 +144,10 @@ func (h *MetricHandler) FetchMetricFromBody(w http.ResponseWriter, r *http.Reque
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(response)
+	err := json.NewEncoder(w).Encode(response)
+	if err != nil {
+		h.metricService.Logger.Info("ошибка записи ответа: %v", err)
+	}
 }
 
 func (h *MetricHandler) UpdateMetricFromPath(w http.ResponseWriter, r *http.Request) {
@@ -143,7 +160,7 @@ func (h *MetricHandler) UpdateMetricFromPath(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	serviceErr := h.metricService.UpdateMetric(metricType, metricName, metricValue)
+	serviceErr := h.metricService.UpdateMetric(r.Context(), metricType, metricName, metricValue)
 	if serviceErr != nil {
 		w.WriteHeader(http.StatusBadRequest)
 		return
@@ -174,8 +191,43 @@ func (h *MetricHandler) UpdateMetricFromBody(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	serviceErr := h.metricService.UpdateMetricFromStruct(req.MType, req.ID, req)
+	serviceErr := h.metricService.UpdateMetricFromStruct(r.Context(), req.MType, req.ID, req)
 	if serviceErr != nil {
+		h.metricService.Logger.Info(serviceErr.Error())
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+}
+
+func (h *MetricHandler) BatchUpdateMetricsFromBody(w http.ResponseWriter, r *http.Request) {
+	if r.Header.Get("Content-Type") != "application/json" {
+		w.WriteHeader(http.StatusUnsupportedMediaType)
+		return
+	}
+
+	var req []models.Metrics
+	decoder := json.NewDecoder(r.Body)
+	decoder.DisallowUnknownFields()
+
+	if err := decoder.Decode(&req); err != nil {
+		h.metricService.Logger.Info(err.Error())
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	for _, m := range req {
+		if m.ID == "" {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+	}
+
+	serviceErr := h.metricService.UpdateMetricsFromStruct(r.Context(), req)
+	if serviceErr != nil {
+		h.metricService.Logger.Info(serviceErr.Error())
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
