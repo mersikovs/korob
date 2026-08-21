@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"slices"
 	"strconv"
@@ -203,10 +202,6 @@ func (m *MetricService) UpdateMetricsFromStruct(ctx context.Context, metrics []m
 }
 
 func (m *MetricService) Ping(ctx context.Context) error {
-	if m.repo == nil {
-		return errors.New("metric repository is nil")
-	}
-
 	pinger, ok := m.repo.(Pinger)
 	if !ok {
 		return nil
