@@ -17,7 +17,7 @@ func TestGetCountDiff(t *testing.T) {
 		name       string
 		oldMetrics map[string]models.Metrics
 		newMetrics map[string]models.Metrics
-		want       int
+		want       int64
 	}{
 		{
 			name:       "no diff empty",

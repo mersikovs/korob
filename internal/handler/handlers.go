@@ -218,11 +218,17 @@ func (h *MetricHandler) BatchUpdateMetricsFromBody(w http.ResponseWriter, r *htt
 		return
 	}
 
+	validReq := make([]models.Metrics, 0)
 	for _, m := range req {
-		if m.ID == "" {
-			w.WriteHeader(http.StatusNotFound)
-			return
+		if m.ID != "" {
+			validReq = append(validReq, m)
+
 		}
+	}
+
+	if len(validReq) == 0 {
+		w.WriteHeader(http.StatusNotFound)
+		return
 	}
 
 	serviceErr := h.metricService.UpdateMetricsFromStruct(r.Context(), req)

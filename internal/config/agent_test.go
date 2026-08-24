@@ -33,6 +33,7 @@ func TestParse(t *testing.T) {
 				Address:        "localhost:8080",
 				ReportInterval: 10,
 				PollInterval:   2,
+				RateLimit:      1,
 			},
 		},
 		{
@@ -45,6 +46,7 @@ func TestParse(t *testing.T) {
 				ReportInterval: 5,
 				PollInterval:   1,
 				Key:            nil,
+				RateLimit:      1,
 			},
 		},
 		{
@@ -57,6 +59,7 @@ func TestParse(t *testing.T) {
 				ReportInterval: 10,
 				PollInterval:   1,
 				Key:            nil,
+				RateLimit:      1,
 			},
 		},
 		{
@@ -73,6 +76,7 @@ func TestParse(t *testing.T) {
 				ReportInterval: 6,
 				PollInterval:   2,
 				Key:            nil,
+				RateLimit:      1,
 			},
 		},
 		{
@@ -89,6 +93,7 @@ func TestParse(t *testing.T) {
 				ReportInterval: 6,
 				PollInterval:   2,
 				Key:            nil,
+				RateLimit:      1,
 			},
 		},
 		{
@@ -105,6 +110,7 @@ func TestParse(t *testing.T) {
 				ReportInterval: 6,
 				PollInterval:   2,
 				Key:            nil,
+				RateLimit:      1,
 			},
 			wantErr: true,
 		},
@@ -122,6 +128,7 @@ func TestParse(t *testing.T) {
 				ReportInterval: 5,
 				PollInterval:   1,
 				Key:            nil,
+				RateLimit:      1,
 			},
 		},
 		{
@@ -136,6 +143,7 @@ func TestParse(t *testing.T) {
 				ReportInterval: 5,
 				PollInterval:   1,
 				Key:            nil,
+				RateLimit:      1,
 			},
 		},
 		{
@@ -150,6 +158,7 @@ func TestParse(t *testing.T) {
 				ReportInterval: 10,
 				PollInterval:   1,
 				Key:            nil,
+				RateLimit:      1,
 			},
 		},
 		{
@@ -164,6 +173,7 @@ func TestParse(t *testing.T) {
 				ReportInterval: 10,
 				PollInterval:   2,
 				Key:            []byte("1"),
+				RateLimit:      1,
 			},
 		},
 		{
@@ -179,6 +189,7 @@ func TestParse(t *testing.T) {
 				ReportInterval: 10,
 				PollInterval:   2,
 				Key:            []byte("2"),
+				RateLimit:      1,
 			},
 		},
 		{
@@ -193,6 +204,7 @@ func TestParse(t *testing.T) {
 				ReportInterval: 10,
 				PollInterval:   2,
 				Key:            nil,
+				RateLimit:      1,
 			},
 		},
 		{
@@ -208,21 +220,69 @@ func TestParse(t *testing.T) {
 				ReportInterval: 10,
 				PollInterval:   2,
 				Key:            []byte("3"),
+				RateLimit:      1,
 			},
 		},
 		{
-			name: "key value in env only",
+			name: "ratelimit value in env",
 			fs:   flag.NewFlagSet("test", flag.ContinueOnError),
-			args: []string{"-p", "-10"},
+			args: []string{"-l", "3"},
 			env: FakeEnv{
-				"ADDRESS": "192.168.1.1:8080",
-				"KEY":     "3",
+				"ADDRESS":    "192.168.1.1:8080",
+				"RATE_LIMIT": "2",
 			},
 			want: &config.Config{
 				Address:        "192.168.1.1:8080",
 				ReportInterval: 10,
 				PollInterval:   2,
-				Key:            []byte("3"),
+				RateLimit:      2,
+			},
+		},
+		{
+			name: "ratelimit value empty",
+			fs:   flag.NewFlagSet("test", flag.ContinueOnError),
+			args: []string{"-l", ""},
+			env: FakeEnv{
+				"ADDRESS": "192.168.1.1:8080",
+			},
+			want: &config.Config{
+				Address:        "192.168.1.1:8080",
+				ReportInterval: 10,
+				PollInterval:   2,
+				Key:            nil,
+				RateLimit:      1,
+			},
+		},
+		{
+			name: "ratelimit in env over",
+			fs:   flag.NewFlagSet("test", flag.ContinueOnError),
+			args: []string{"-l", ""},
+			env: FakeEnv{
+				"ADDRESS":    "192.168.1.1:8080",
+				"RATE_LIMIT": "5",
+			},
+			want: &config.Config{
+				Address:        "192.168.1.1:8080",
+				ReportInterval: 10,
+				PollInterval:   2,
+				Key:            nil,
+				RateLimit:      5,
+			},
+		},
+		{
+			name: "ratelimit value in env only",
+			fs:   flag.NewFlagSet("test", flag.ContinueOnError),
+			args: []string{"-p", "-10"},
+			env: FakeEnv{
+				"ADDRESS":    "192.168.1.1:8080",
+				"RATE_LIMIT": "3",
+			},
+			want: &config.Config{
+				Address:        "192.168.1.1:8080",
+				ReportInterval: 10,
+				PollInterval:   2,
+				Key:            nil,
+				RateLimit:      3,
 			},
 		},
 	}

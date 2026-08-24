@@ -96,21 +96,21 @@ func GetRuntimeMetrics() map[string]models.Metrics {
 	for name, value := range gaugeMetrics {
 		result[name] = models.Metrics{
 			ID:    name,
-			MType: "gauge",
-			Value: Float64Ptr(float64(value)),
+			MType: models.Gauge,
+			Value: new(float64(value)),
 		}
 	}
 
 	result["NumForcedGC"] = models.Metrics{
 		ID:    "NumForcedGC",
-		MType: "gauge",
-		Value: Float64Ptr(float64(m.NumForcedGC)),
+		MType: models.Gauge,
+		Value: new(float64(m.NumForcedGC)),
 	}
 
 	result["GCCPUFraction"] = models.Metrics{
 		ID:    "GCCPUFraction",
-		MType: "gauge",
-		Value: Float64Ptr(float64(m.GCCPUFraction)),
+		MType: models.Gauge,
+		Value: new(float64(m.GCCPUFraction)),
 	}
 
 	return result
@@ -120,7 +120,7 @@ func Float64Ptr(v float64) *float64 {
 	return &v
 }
 
-func GetCountDiff(oldMetrics, newMetrics map[string]models.Metrics) int {
+func GetCountDiff(oldMetrics, newMetrics map[string]models.Metrics) int64 {
 	countDiff := 0
 
 	for key, newMetric := range newMetrics {
@@ -136,7 +136,7 @@ func GetCountDiff(oldMetrics, newMetrics map[string]models.Metrics) int {
 		}
 	}
 
-	return countDiff
+	return int64(countDiff)
 }
 
 func float64PtrEqual(a, b *float64) bool {

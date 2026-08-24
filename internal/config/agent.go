@@ -10,12 +10,14 @@ const defaultAddress = "localhost:8080"
 const defaultReportInterval = 10
 const defaultPollInterval = 2
 const defaultKey = ""
+const defaultRateLimit = 1
 
 type Config struct {
 	Address        string
 	Key            []byte
 	ReportInterval int
 	PollInterval   int
+	RateLimit      int
 }
 
 type EnvSource interface {
@@ -52,6 +54,15 @@ func Parse(fs *flag.FlagSet, args []string, env EnvSource) (*Config, error) {
 		return nil
 	})
 
+	cnf.RateLimit = defaultRateLimit
+	fs.Func("l", "количество одновременно исходящих запросов на сервер", func(s string) error {
+		v, err := strconv.Atoi(s)
+		if err == nil && v > 0 {
+			cnf.RateLimit = v
+		}
+		return nil
+	})
+
 	if err := fs.Parse(args); err != nil {
 		return nil, err
 	}
@@ -79,6 +90,13 @@ func Parse(fs *flag.FlagSet, args []string, env EnvSource) (*Config, error) {
 		pi, err := strconv.Atoi(pollInterval)
 		if err == nil && pi > 0 {
 			cnf.PollInterval = pi
+		}
+	}
+
+	if rateLimit, exists := env.LookupEnv("RATE_LIMIT"); exists {
+		rl, err := strconv.Atoi(rateLimit)
+		if err == nil && rl > 0 {
+			cnf.RateLimit = rl
 		}
 	}
 

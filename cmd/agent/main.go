@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"net/http"
@@ -49,8 +50,15 @@ func main() {
 	}
 
 	retryClient := transport.New(client, delays)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 	agent := agent.NewAgent(cnf, retryClient)
-	agent.Run()
+	done := make(chan struct{})
+	go func() {
+		agent.Run(ctx)
+		close(done)
+	}()
+
 	fmt.Println("Работаю... Нажми Ctrl+C для завершения")
 
 	// Ждём сигнал ОС (Ctrl+C или docker stop)
@@ -58,6 +66,7 @@ func main() {
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
 	<-sigChan // блокируем main до сигнала
-
+	cancel()
+	<-done
 	fmt.Println("Завершено")
 }
