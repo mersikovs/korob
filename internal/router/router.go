@@ -7,7 +7,7 @@ import (
 	"github.com/mersikovs/korob.git/internal/service"
 )
 
-func NewRouter(service *service.MetricService) *chi.Mux {
+func NewRouter(service *service.MetricService, signKey []byte) *chi.Mux {
 	r := chi.NewRouter()
 
 	metricHandler := handler.NewMetricHandler(service)
@@ -15,6 +15,11 @@ func NewRouter(service *service.MetricService) *chi.Mux {
 	r.Use(middleware.Logger(service.Logger))
 	r.Use(middleware.GzipResponseMiddleware)
 	r.Use(middleware.GzipRequestMiddleware)
+
+	if signKey != nil {
+		r.Use(middleware.VerifySha256Middleware(signKey, service.Logger))
+		r.Use(middleware.SignResponseMiddleware(signKey, service.Logger))
+	}
 
 	//Сервисный эндпоинт
 	r.Get("/ping", metricHandler.PingDB)
