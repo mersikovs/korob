@@ -17,9 +17,9 @@ type RetryClient struct {
 	delays []time.Duration
 }
 
-func New(delays []time.Duration) *RetryClient {
+func New(client *http.Client, delays []time.Duration) *RetryClient {
 	return &RetryClient{
-		client: http.DefaultClient,
+		client: client,
 		delays: delays,
 	}
 }

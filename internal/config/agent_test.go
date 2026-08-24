@@ -44,6 +44,19 @@ func TestParse(t *testing.T) {
 				Address:        "192.168.1.1:8080",
 				ReportInterval: 5,
 				PollInterval:   1,
+				Key:            nil,
+			},
+		},
+		{
+			name: "flags value report interval string",
+			fs:   flag.NewFlagSet("agent_test", flag.ContinueOnError),
+			args: []string{"-a", "192.168.1.1:8080", "-r", "abc", "-p", "1"},
+			env:  FakeEnv{},
+			want: &config.Config{
+				Address:        "192.168.1.1:8080",
+				ReportInterval: 10,
+				PollInterval:   1,
+				Key:            nil,
 			},
 		},
 		{
@@ -59,6 +72,7 @@ func TestParse(t *testing.T) {
 				Address:        "192.168.1.1:8081",
 				ReportInterval: 6,
 				PollInterval:   2,
+				Key:            nil,
 			},
 		},
 		{
@@ -74,6 +88,7 @@ func TestParse(t *testing.T) {
 				Address:        "192.168.1.1:8081",
 				ReportInterval: 6,
 				PollInterval:   2,
+				Key:            nil,
 			},
 		},
 		{
@@ -89,6 +104,7 @@ func TestParse(t *testing.T) {
 				Address:        "192.168.1.1:8081",
 				ReportInterval: 6,
 				PollInterval:   2,
+				Key:            nil,
 			},
 			wantErr: true,
 		},
@@ -105,6 +121,7 @@ func TestParse(t *testing.T) {
 				Address:        "192.168.1.1:8080",
 				ReportInterval: 5,
 				PollInterval:   1,
+				Key:            nil,
 			},
 		},
 		{
@@ -118,6 +135,7 @@ func TestParse(t *testing.T) {
 				Address:        "192.168.1.1:8080",
 				ReportInterval: 5,
 				PollInterval:   1,
+				Key:            nil,
 			},
 		},
 		{
@@ -131,6 +149,80 @@ func TestParse(t *testing.T) {
 				Address:        "192.168.1.1:8080",
 				ReportInterval: 10,
 				PollInterval:   1,
+				Key:            nil,
+			},
+		},
+		{
+			name: "key value in args",
+			fs:   flag.NewFlagSet("test", flag.ContinueOnError),
+			args: []string{"-k", "1"},
+			env: FakeEnv{
+				"ADDRESS": "192.168.1.1:8080",
+			},
+			want: &config.Config{
+				Address:        "192.168.1.1:8080",
+				ReportInterval: 10,
+				PollInterval:   2,
+				Key:            []byte("1"),
+			},
+		},
+		{
+			name: "key value in env",
+			fs:   flag.NewFlagSet("test", flag.ContinueOnError),
+			args: []string{"-k", "1"},
+			env: FakeEnv{
+				"ADDRESS": "192.168.1.1:8080",
+				"KEY":     "2",
+			},
+			want: &config.Config{
+				Address:        "192.168.1.1:8080",
+				ReportInterval: 10,
+				PollInterval:   2,
+				Key:            []byte("2"),
+			},
+		},
+		{
+			name: "key value in empty",
+			fs:   flag.NewFlagSet("test", flag.ContinueOnError),
+			args: []string{"-k", ""},
+			env: FakeEnv{
+				"ADDRESS": "192.168.1.1:8080",
+			},
+			want: &config.Config{
+				Address:        "192.168.1.1:8080",
+				ReportInterval: 10,
+				PollInterval:   2,
+				Key:            nil,
+			},
+		},
+		{
+			name: "key value in env only",
+			fs:   flag.NewFlagSet("test", flag.ContinueOnError),
+			args: []string{"-k", ""},
+			env: FakeEnv{
+				"ADDRESS": "192.168.1.1:8080",
+				"KEY":     "3",
+			},
+			want: &config.Config{
+				Address:        "192.168.1.1:8080",
+				ReportInterval: 10,
+				PollInterval:   2,
+				Key:            []byte("3"),
+			},
+		},
+		{
+			name: "key value in env only",
+			fs:   flag.NewFlagSet("test", flag.ContinueOnError),
+			args: []string{"-p", "-10"},
+			env: FakeEnv{
+				"ADDRESS": "192.168.1.1:8080",
+				"KEY":     "3",
+			},
+			want: &config.Config{
+				Address:        "192.168.1.1:8080",
+				ReportInterval: 10,
+				PollInterval:   2,
+				Key:            []byte("3"),
 			},
 		},
 	}

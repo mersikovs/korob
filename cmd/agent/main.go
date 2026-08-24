@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
@@ -11,6 +12,7 @@ import (
 	"github.com/mersikovs/korob.git/internal/agent"
 	"github.com/mersikovs/korob.git/internal/agent/transport"
 	"github.com/mersikovs/korob.git/internal/config"
+	"github.com/mersikovs/korob.git/internal/logger"
 )
 
 func main() {
@@ -26,7 +28,27 @@ func main() {
 		return
 	}
 
-	retryClient := transport.New(delays)
+	logger, err := logger.NewZap("info")
+	if err != nil {
+		fmt.Println("Ошибка создания логгера")
+		os.Exit(1)
+	}
+
+	compression := transport.NewCompressTransport(
+		http.DefaultTransport,
+		logger,
+	)
+
+	t := &transport.SigningTransport{
+		Base: compression,
+		Key:  cnf.Key,
+	}
+
+	client := &http.Client{
+		Transport: t,
+	}
+
+	retryClient := transport.New(client, delays)
 	agent := agent.NewAgent(cnf, retryClient)
 	agent.Run()
 	fmt.Println("Работаю... Нажми Ctrl+C для завершения")

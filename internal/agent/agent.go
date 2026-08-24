@@ -15,19 +15,22 @@ const DefaultReportInterval = 10
 const NameRandomField = "RandomValue"
 
 type Agent struct {
-	lastMetrics map[string]models.Metrics
-	pollCount   int
 	cnf         *config.Config
 	client      Sender
-	mu          sync.RWMutex
+	key         []byte
+	lastMetrics map[string]models.Metrics
+	pollCount   int
+
+	mu sync.RWMutex
 }
 
 func NewAgent(cnf *config.Config, transport Sender) *Agent {
 	return &Agent{
 		cnf:         cnf,
+		client:      transport,
+		key:         cnf.Key,
 		lastMetrics: make(map[string]models.Metrics),
 		pollCount:   0,
-		client:      transport,
 	}
 }
 

@@ -70,7 +70,6 @@ func GetRuntimeMetrics() map[string]models.Metrics {
 		result[name] = m
 	}
 
-	//TODO Старые метрики заменить на актуальные из runtime/metrics
 	var m runtime.MemStats
 	runtime.ReadMemStats(&m)
 
@@ -256,16 +255,9 @@ func PostMetricsBatch(sender Sender, baseURL string, metrics map[string]models.M
 
 	var resp *http.Response
 
-	var buf bytes.Buffer
-	gz := gzip.NewWriter(&buf)
-	if _, err = gz.Write(jsonData); err != nil {
-		return fmt.Errorf("ошибка записи gzip: %w", err)
-	}
+	buf := bytes.NewBuffer(jsonData)
 
-	if err = gz.Close(); err != nil {
-		return fmt.Errorf("ошибка закрытия gz: %w", err)
-	}
-	req, err := http.NewRequest("POST", baseURL, &buf)
+	req, err := http.NewRequest("POST", baseURL, buf)
 	if err != nil {
 		return fmt.Errorf("ошибка создания запроса: %w", err)
 	}

@@ -43,8 +43,7 @@ func main() {
 		logger.Fatal("Ошибка создания объекта хранилища:", err)
 	}
 	service := service.NewMetricService(storage, logger)
-
-	router := router.NewRouter(service)
+	router := router.NewRouter(service, cnf.Key)
 
 	err = http.ListenAndServe(cnf.Address, router)
 	if err != nil {
