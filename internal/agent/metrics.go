@@ -120,25 +120,6 @@ func Float64Ptr(v float64) *float64 {
 	return &v
 }
 
-func GetCountDiff(oldMetrics, newMetrics map[string]models.Metrics) int64 {
-	countDiff := 0
-
-	for key, newMetric := range newMetrics {
-		oldMetric, exists := oldMetrics[key]
-		if !exists {
-			countDiff++
-			continue
-		}
-
-		if !float64PtrEqual(newMetric.Value, oldMetric.Value) ||
-			!int64PtrEqual(newMetric.Delta, oldMetric.Delta) {
-			countDiff++
-		}
-	}
-
-	return int64(countDiff)
-}
-
 func float64PtrEqual(a, b *float64) bool {
 	if a == nil && b == nil {
 		return true

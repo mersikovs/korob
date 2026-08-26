@@ -231,7 +231,7 @@ func (h *MetricHandler) BatchUpdateMetricsFromBody(w http.ResponseWriter, r *htt
 		return
 	}
 
-	serviceErr := h.metricService.UpdateMetricsFromStruct(r.Context(), req)
+	serviceErr := h.metricService.UpdateMetricsFromStruct(r.Context(), validReq)
 	if serviceErr != nil {
 		h.metricService.Logger.Info(serviceErr.Error())
 		w.WriteHeader(http.StatusBadRequest)

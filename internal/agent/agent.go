@@ -9,19 +9,20 @@ import (
 	"time"
 
 	"github.com/mersikovs/korob.git/internal/config"
+	"github.com/mersikovs/korob.git/internal/logger"
 	models "github.com/mersikovs/korob.git/internal/model"
 	"github.com/shirou/gopsutil/v4/cpu"
 	"github.com/shirou/gopsutil/v4/mem"
 )
 
-const DefaultPollInterval = 2
-const DefaultReportInterval = 10
 const NameRandomField = "RandomValue"
 const NamePollCountField = "PollCount"
 
 type Agent struct {
-	cnf            *config.Config
-	client         Sender
+	cnf    *config.Config
+	client Sender
+	logger logger.Logger
+
 	key            []byte
 	lastMetrics    map[string]models.Metrics
 	pollCount      int64
@@ -31,18 +32,22 @@ type Agent struct {
 	metricsChan chan map[string]models.Metrics
 	maxWorkers  int
 
+	resetBeatCh chan struct{}
+
 	ctx    context.Context
 	cancel context.CancelFunc
-	wg     sync.WaitGroup
 
-	lastSendTime time.Time
-	mu           sync.RWMutex
+	wgProducers sync.WaitGroup
+	wgConsumers sync.WaitGroup
+
+	mu sync.RWMutex
 }
 
-func NewAgent(cnf *config.Config, transport Sender) *Agent {
+func NewAgent(cnf *config.Config, transport Sender, logger logger.Logger) *Agent {
 	return &Agent{
 		cnf:            cnf,
 		client:         transport,
+		logger:         logger,
 		key:            cnf.Key,
 		lastMetrics:    make(map[string]models.Metrics),
 		pollCount:      0,
@@ -55,17 +60,18 @@ func NewAgent(cnf *config.Config, transport Sender) *Agent {
 func (a *Agent) Run(ctx context.Context) {
 	a.ctx, a.cancel = context.WithCancel(ctx)
 	a.metricsChan = make(chan map[string]models.Metrics, 100)
+	a.resetBeatCh = make(chan struct{}, 1)
 
-	a.wg.Add(1)
+	a.wgProducers.Add(1)
 	go a.poolRuntimeMetrics()
 
-	a.wg.Add(1)
+	a.wgProducers.Add(1)
 	go a.poolSystemMetrics()
 
-	a.wg.Add(1)
+	a.wgProducers.Add(1)
 	go a.heartbeatSender()
 
-	a.wg.Add(1)
+	a.wgConsumers.Add(1)
 	go a.startSenderPool()
 
 	<-a.ctx.Done()
@@ -80,46 +86,37 @@ func (a *Agent) saveMetrics(metrics map[string]models.Metrics, pollCount int64) 
 	a.pollCount = pollCount
 }
 
-func (a *Agent) getSavedMetrics() (map[string]models.Metrics, int64) {
-	a.mu.RLock()
-	defer a.mu.RUnlock()
-	return a.lastMetrics, a.pollCount
-}
-
 func (a *Agent) heartbeatSender() {
-	ticker := time.NewTicker(a.reportInterval)
-	defer ticker.Stop()
+	timer := time.NewTimer(a.reportInterval)
+	defer timer.Stop()
 	for {
 		select {
 		case <-a.ctx.Done():
 			return
-		case <-ticker.C:
-			a.mu.RLock()
-			lastSend := a.lastSendTime
-			a.mu.RUnlock()
-			if time.Since(lastSend) >= a.reportInterval {
-				hb := map[string]models.Metrics{}
-				pollCount := int64(1)
-				hb[NameRandomField] = models.Metrics{
-					ID:    NameRandomField,
-					MType: models.Gauge,
-					Value: new(rand.Float64()),
-				}
-
-				hb[NamePollCountField] = models.Metrics{
-					ID:    NamePollCountField,
-					MType: models.Counter,
-					Delta: &pollCount,
-				}
-				select {
-				case a.metricsChan <- hb:
-					a.mu.Lock()
-					a.lastSendTime = time.Now()
-					a.mu.Unlock()
-				case <-a.ctx.Done():
-					return
-				}
+		case <-timer.C:
+			hb := map[string]models.Metrics{}
+			pollCount := int64(1)
+			hb[NameRandomField] = models.Metrics{
+				ID:    NameRandomField,
+				MType: models.Gauge,
+				Value: new(rand.Float64()),
 			}
+
+			hb[NamePollCountField] = models.Metrics{
+				ID:    NamePollCountField,
+				MType: models.Counter,
+				Delta: &pollCount,
+			}
+
+			select {
+			case a.metricsChan <- hb:
+			case <-a.ctx.Done():
+				return
+			}
+
+			timer.Reset(a.reportInterval)
+		case <-a.resetBeatCh:
+			timer.Reset(a.reportInterval)
 		}
 	}
 }
@@ -137,6 +134,7 @@ func (a *Agent) poolRuntimeMetrics() {
 
 			select {
 			case a.metricsChan <- metrics:
+				a.scheduleNextSend()
 			case <-a.ctx.Done():
 				return
 			}
@@ -147,8 +145,7 @@ func (a *Agent) poolRuntimeMetrics() {
 
 func (a *Agent) collectRuntimeMetrics() map[string]models.Metrics {
 	metrics := GetRuntimeMetrics()
-	lastMetrics, _ := a.getSavedMetrics()
-	pollCount := GetCountDiff(lastMetrics, metrics)
+	pollCount := a.getCountDiff(metrics)
 	a.saveMetrics(metrics, pollCount)
 	metrics[NameRandomField] = models.Metrics{
 		ID:    NameRandomField,
@@ -178,6 +175,7 @@ func (a *Agent) poolSystemMetrics() {
 
 			select {
 			case a.metricsChan <- metrics:
+				a.scheduleNextSend()
 			case <-a.ctx.Done():
 				return
 			}
@@ -213,8 +211,7 @@ func (a *Agent) collectSystemMetrics() map[string]models.Metrics {
 		}
 	}
 
-	lastMetrics, _ := a.getSavedMetrics()
-	pollCount := GetCountDiff(lastMetrics, result)
+	pollCount := a.getCountDiff(result)
 	a.saveMetrics(result, pollCount)
 	result[NameRandomField] = models.Metrics{
 		ID:    NameRandomField,
@@ -229,6 +226,28 @@ func (a *Agent) collectSystemMetrics() map[string]models.Metrics {
 	}
 
 	return result
+}
+
+func (a *Agent) getCountDiff(newMetrics map[string]models.Metrics) int64 {
+	countDiff := 0
+	a.mu.RLock()
+
+	for key, newMetric := range newMetrics {
+		oldMetric, exists := a.lastMetrics[key]
+		if !exists {
+			countDiff++
+			continue
+		}
+
+		if !float64PtrEqual(newMetric.Value, oldMetric.Value) ||
+			!int64PtrEqual(newMetric.Delta, oldMetric.Delta) {
+			countDiff++
+		}
+	}
+
+	a.mu.RUnlock()
+
+	return int64(countDiff)
 }
 
 func (a *Agent) startSenderPool() {
@@ -256,7 +275,42 @@ func (a *Agent) sendMetrics(metrics map[string]models.Metrics) {
 
 }
 
+func (a *Agent) scheduleNextSend() {
+	select {
+	case a.resetBeatCh <- struct{}{}:
+	default:
+	}
+}
+
 func (a *Agent) shutdown() {
+
+	producersDoneChan := make(chan struct{})
+
+	go func() {
+		a.wgProducers.Wait()
+		close(producersDoneChan)
+	}()
+
+	select {
+	case <-producersDoneChan:
+		a.logger.Info("все источники данных завершили работу")
+	case <-time.After(30 * time.Second):
+		a.logger.Info("все источники данных не завершили работу и прерваны по таймауту")
+	}
+
 	close(a.metricsChan)
-	a.wg.Wait()
+
+	consumersDoneChan := make(chan struct{})
+
+	go func() {
+		a.wgConsumers.Wait()
+		close(consumersDoneChan)
+	}()
+
+	select {
+	case <-consumersDoneChan:
+		a.logger.Info("все получатели данных завершили работу")
+	case <-time.After(30 * time.Second):
+		a.logger.Info("все получатели данных не завершили работу и прерваны по таймауту")
+	}
 }

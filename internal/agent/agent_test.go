@@ -1,16 +1,11 @@
-package agent_test
+package agent
 
 import (
 	"testing"
 
-	"github.com/mersikovs/korob.git/internal/agent"
 	models "github.com/mersikovs/korob.git/internal/model"
 	"github.com/stretchr/testify/assert"
 )
-
-func Float64Ptr(v float64) *float64 {
-	return &v
-}
 
 func TestGetCountDiff(t *testing.T) {
 	tests := []struct {
@@ -96,7 +91,11 @@ func TestGetCountDiff(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := agent.GetCountDiff(tt.oldMetrics, tt.newMetrics)
+			agent := &Agent{
+				lastMetrics: tt.oldMetrics,
+			}
+
+			got := agent.getCountDiff(tt.newMetrics)
 			assert.Equal(t, tt.want, got)
 		})
 	}

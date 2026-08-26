@@ -61,6 +61,7 @@ func TestParse(t *testing.T) {
 				Key:            nil,
 				RateLimit:      1,
 			},
+			wantErr: true,
 		},
 		{
 			name: "env over flags values",
@@ -130,6 +131,7 @@ func TestParse(t *testing.T) {
 				Key:            nil,
 				RateLimit:      1,
 			},
+			wantErr: true,
 		},
 		{
 			name: "mixied env and flags values",
@@ -252,6 +254,7 @@ func TestParse(t *testing.T) {
 				Key:            nil,
 				RateLimit:      1,
 			},
+			wantErr: true,
 		},
 		{
 			name: "ratelimit in env over",
@@ -268,6 +271,7 @@ func TestParse(t *testing.T) {
 				Key:            nil,
 				RateLimit:      5,
 			},
+			wantErr: true,
 		},
 		{
 			name: "ratelimit value in env only",
@@ -284,6 +288,7 @@ func TestParse(t *testing.T) {
 				Key:            nil,
 				RateLimit:      3,
 			},
+			wantErr: true,
 		},
 	}
 	for _, tt := range tests {

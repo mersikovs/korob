@@ -25,7 +25,7 @@ func main() {
 	fs := flag.NewFlagSet("agent", flag.ContinueOnError)
 	cnf, err := config.Parse(fs, os.Args[1:], config.OSenv{})
 	if err != nil {
-		fmt.Println("Ошибка парсинга параметров")
+		fmt.Println("Ошибка парсинга параметров ", err)
 		return
 	}
 
@@ -52,14 +52,14 @@ func main() {
 	retryClient := transport.New(client, delays)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	agent := agent.NewAgent(cnf, retryClient)
+	agent := agent.NewAgent(cnf, retryClient, logger)
 	done := make(chan struct{})
 	go func() {
 		agent.Run(ctx)
 		close(done)
 	}()
 
-	fmt.Println("Работаю... Нажми Ctrl+C для завершения")
+	logger.Info("Работаю... Нажми Ctrl+C для завершения")
 
 	// Ждём сигнал ОС (Ctrl+C или docker stop)
 	sigChan := make(chan os.Signal, 1)
@@ -68,5 +68,5 @@ func main() {
 	<-sigChan // блокируем main до сигнала
 	cancel()
 	<-done
-	fmt.Println("Завершено")
+	logger.Info("Завершено")
 }
