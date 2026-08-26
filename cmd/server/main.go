@@ -20,7 +20,7 @@ func main() {
 	fs := flag.NewFlagSet("server", flag.ContinueOnError)
 	cnf, err := config.ServerParseConfig(fs, os.Args[1:], config.OSenv{})
 	if err != nil {
-		fmt.Println("Ошибка парсинга параметров")
+		fmt.Println("Ошибка парсинга параметров ", err)
 		os.Exit(1)
 	}
 
@@ -43,8 +43,7 @@ func main() {
 		logger.Fatal("Ошибка создания объекта хранилища:", err)
 	}
 	service := service.NewMetricService(storage, logger)
-
-	router := router.NewRouter(service)
+	router := router.NewRouter(service, cnf.Key)
 
 	err = http.ListenAndServe(cnf.Address, router)
 	if err != nil {

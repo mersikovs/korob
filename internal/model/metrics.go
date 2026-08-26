@@ -25,6 +25,7 @@ type Metrics struct {
 
 type ServerConfig struct {
 	Address         string
+	Key             []byte
 	DatabaseDSN     string
 	FileStoragePath string
 	Restore         bool
