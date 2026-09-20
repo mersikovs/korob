@@ -70,7 +70,6 @@ func GetRuntimeMetrics() map[string]models.Metrics {
 		result[name] = m
 	}
 
-	//TODO Старые метрики заменить на актуальные из runtime/metrics
 	var m runtime.MemStats
 	runtime.ReadMemStats(&m)
 
@@ -97,21 +96,21 @@ func GetRuntimeMetrics() map[string]models.Metrics {
 	for name, value := range gaugeMetrics {
 		result[name] = models.Metrics{
 			ID:    name,
-			MType: "gauge",
-			Value: Float64Ptr(float64(value)),
+			MType: models.Gauge,
+			Value: new(float64(value)),
 		}
 	}
 
 	result["NumForcedGC"] = models.Metrics{
 		ID:    "NumForcedGC",
-		MType: "gauge",
-		Value: Float64Ptr(float64(m.NumForcedGC)),
+		MType: models.Gauge,
+		Value: new(float64(m.NumForcedGC)),
 	}
 
 	result["GCCPUFraction"] = models.Metrics{
 		ID:    "GCCPUFraction",
-		MType: "gauge",
-		Value: Float64Ptr(float64(m.GCCPUFraction)),
+		MType: models.Gauge,
+		Value: new(float64(m.GCCPUFraction)),
 	}
 
 	return result
@@ -119,25 +118,6 @@ func GetRuntimeMetrics() map[string]models.Metrics {
 
 func Float64Ptr(v float64) *float64 {
 	return &v
-}
-
-func GetCountDiff(oldMetrics, newMetrics map[string]models.Metrics) int {
-	countDiff := 0
-
-	for key, newMetric := range newMetrics {
-		oldMetric, exists := oldMetrics[key]
-		if !exists {
-			countDiff++
-			continue
-		}
-
-		if !float64PtrEqual(newMetric.Value, oldMetric.Value) ||
-			!int64PtrEqual(newMetric.Delta, oldMetric.Delta) {
-			countDiff++
-		}
-	}
-
-	return countDiff
 }
 
 func float64PtrEqual(a, b *float64) bool {
@@ -256,16 +236,9 @@ func PostMetricsBatch(sender Sender, baseURL string, metrics map[string]models.M
 
 	var resp *http.Response
 
-	var buf bytes.Buffer
-	gz := gzip.NewWriter(&buf)
-	if _, err = gz.Write(jsonData); err != nil {
-		return fmt.Errorf("ошибка записи gzip: %w", err)
-	}
+	buf := bytes.NewBuffer(jsonData)
 
-	if err = gz.Close(); err != nil {
-		return fmt.Errorf("ошибка закрытия gz: %w", err)
-	}
-	req, err := http.NewRequest("POST", baseURL, &buf)
+	req, err := http.NewRequest("POST", baseURL, buf)
 	if err != nil {
 		return fmt.Errorf("ошибка создания запроса: %w", err)
 	}

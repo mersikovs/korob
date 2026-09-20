@@ -139,6 +139,68 @@ func TestServerParseConfig(t *testing.T) {
 				Restore:         true,
 			},
 		},
+		{
+			name: "empty key param",
+			fs:   flag.NewFlagSet("server_test", flag.ContinueOnError),
+			args: []string{"-f", "file.backup", "-r"},
+			env: FakeEnv{
+				"ADDRESS": "192.168.1.1:8080",
+			},
+			want: &models.ServerConfig{
+				Address:         "192.168.1.1:8080",
+				StoreInterval:   300,
+				FileStoragePath: "file.backup",
+				Restore:         true,
+				Key:             nil,
+			},
+		},
+		{
+			name: "empty key param",
+			fs:   flag.NewFlagSet("server_test", flag.ContinueOnError),
+			args: []string{"-f", "file.backup", "-r", "-k", "123"},
+			env: FakeEnv{
+				"ADDRESS": "192.168.1.1:8080",
+			},
+			want: &models.ServerConfig{
+				Address:         "192.168.1.1:8080",
+				StoreInterval:   300,
+				FileStoragePath: "file.backup",
+				Restore:         true,
+				Key:             []byte("123"),
+			},
+		},
+		{
+			name: "env over key param",
+			fs:   flag.NewFlagSet("server_test", flag.ContinueOnError),
+			args: []string{"-f", "file.backup", "-r", "-k", "123"},
+			env: FakeEnv{
+				"ADDRESS": "192.168.1.1:8080",
+				"KEY":     "345",
+			},
+			want: &models.ServerConfig{
+				Address:         "192.168.1.1:8080",
+				StoreInterval:   300,
+				FileStoragePath: "file.backup",
+				Restore:         true,
+				Key:             []byte("345"),
+			},
+		},
+		{
+			name: "env over key param",
+			fs:   flag.NewFlagSet("server_test", flag.ContinueOnError),
+			args: []string{"-f", "file.backup", "-r"},
+			env: FakeEnv{
+				"ADDRESS": "192.168.1.1:8080",
+				"KEY":     "678",
+			},
+			want: &models.ServerConfig{
+				Address:         "192.168.1.1:8080",
+				StoreInterval:   300,
+				FileStoragePath: "file.backup",
+				Restore:         true,
+				Key:             []byte("678"),
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
