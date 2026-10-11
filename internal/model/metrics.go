@@ -25,6 +25,8 @@ type Metrics struct {
 
 type ServerConfig struct {
 	Address         string
+	AuditFile       string
+	AuditUrl        string
 	Key             []byte
 	DatabaseDSN     string
 	FileStoragePath string

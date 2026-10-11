@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	models "github.com/mersikovs/korob.git/internal/model"
@@ -200,6 +201,14 @@ func (h *MetricHandler) UpdateMetricFromBody(w http.ResponseWriter, r *http.Requ
 
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
+
+	if h.metricService.Publisher != nil {
+		h.metricService.Publisher.Publish(models.AuditEvent{
+			Ts:        time.Now().Unix(),
+			Metrics:   []string{req.ID},
+			IPAddress: extractIP(r),
+		})
+	}
 }
 
 func (h *MetricHandler) BatchUpdateMetricsFromBody(w http.ResponseWriter, r *http.Request) {
@@ -218,11 +227,12 @@ func (h *MetricHandler) BatchUpdateMetricsFromBody(w http.ResponseWriter, r *htt
 		return
 	}
 
+	metricIDs := make([]string, 0)
 	validReq := make([]models.Metrics, 0)
 	for _, m := range req {
 		if m.ID != "" {
 			validReq = append(validReq, m)
-
+			metricIDs = append(metricIDs, m.ID)
 		}
 	}
 
@@ -240,4 +250,26 @@ func (h *MetricHandler) BatchUpdateMetricsFromBody(w http.ResponseWriter, r *htt
 
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
+
+	if h.metricService.Publisher != nil {
+		h.metricService.Publisher.Publish(models.AuditEvent{
+			Ts:        time.Now().Unix(),
+			Metrics:   metricIDs,
+			IPAddress: extractIP(r),
+		})
+	}
+}
+
+func extractIP(r *http.Request) string {
+	if ip := r.Header.Get("X-Forwarded-For"); ip != "" {
+		return strings.Split(ip, ",")[0]
+	}
+	if ip := r.Header.Get("X-Real-IP"); ip != "" {
+		return ip
+	}
+	parts := strings.Split(r.RemoteAddr, ":")
+	if len(parts) > 0 {
+		return parts[0]
+	}
+	return "unknown"
 }

@@ -26,7 +26,7 @@ func TestUpdateMetric(t *testing.T) {
 	}
 	modelStorage, _ := repository.NewStorage(ctx, &cnf, logger)
 
-	service := service.NewMetricService(modelStorage, logger)
+	service := service.NewMetricService(modelStorage, nil, logger)
 	router := router.NewRouter(service, nil)
 
 	type want struct {

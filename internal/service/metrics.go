@@ -6,6 +6,7 @@ import (
 	"slices"
 	"strconv"
 
+	"github.com/mersikovs/korob.git/internal/audit"
 	"github.com/mersikovs/korob.git/internal/logger"
 	models "github.com/mersikovs/korob.git/internal/model"
 	"github.com/mersikovs/korob.git/internal/repository"
@@ -16,14 +17,16 @@ type Pinger interface {
 }
 
 type MetricService struct {
-	repo   repository.Storage
-	Logger logger.Logger
+	Publisher *audit.Dispatcher
+	repo      repository.Storage
+	Logger    logger.Logger
 }
 
-func NewMetricService(repo repository.Storage, log logger.Logger) *MetricService {
+func NewMetricService(repo repository.Storage, dispatcher *audit.Dispatcher, log logger.Logger) *MetricService {
 	return &MetricService{
-		repo:   repo,
-		Logger: log,
+		Publisher: dispatcher,
+		repo:      repo,
+		Logger:    log,
 	}
 }
 

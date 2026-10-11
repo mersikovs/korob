@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 
+	"github.com/mersikovs/korob.git/internal/audit"
 	"github.com/mersikovs/korob.git/internal/config"
 	"github.com/mersikovs/korob.git/internal/database"
 	"github.com/mersikovs/korob.git/internal/logger"
@@ -42,7 +43,30 @@ func main() {
 	if err != nil {
 		logger.Fatal("Ошибка создания объекта хранилища:", err)
 	}
-	service := service.NewMetricService(storage, logger)
+
+	var dispatcher *audit.Dispatcher
+	if cnf.AuditFile != "" || cnf.AuditUrl != "" {
+		dispatcher = audit.NewDispatcher(1000, 4, logger)
+
+		if cnf.AuditFile != "" {
+			fileObs, err := audit.NewFileObserver(cnf.AuditFile, cnf.AuditFile, logger)
+			if err != nil {
+				logger.Fatal("Ошибка файлового аудита :", err)
+			}
+			dispatcher.Register(fileObs)
+		}
+
+		if cnf.AuditUrl != "" {
+			remoteObs := audit.NewRemoteObserver(
+				cnf.AuditUrl,
+				cnf.AuditUrl,
+				logger,
+			)
+			dispatcher.Register(remoteObs)
+		}
+	}
+
+	service := service.NewMetricService(storage, dispatcher, logger)
 	router := router.NewRouter(service, cnf.Key)
 
 	err = http.ListenAndServe(cnf.Address, router)

@@ -251,6 +251,8 @@ func (a *Agent) getCountDiff(newMetrics map[string]models.Metrics) int64 {
 }
 
 func (a *Agent) startSenderPool() {
+	defer a.wgConsumers.Done()
+
 	var wg sync.WaitGroup
 	for i := 0; i < a.maxWorkers; i++ {
 		wg.Go(func() {
