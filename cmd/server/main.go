@@ -1,3 +1,4 @@
+// Package main is the entry point for the metrics server application.
 package main
 
 import (
@@ -7,7 +8,10 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"time"
 
+	"github.com/mersikovs/korob.git/internal/audit"
+	"github.com/mersikovs/korob.git/internal/cache"
 	"github.com/mersikovs/korob.git/internal/config"
 	"github.com/mersikovs/korob.git/internal/database"
 	"github.com/mersikovs/korob.git/internal/logger"
@@ -42,7 +46,35 @@ func main() {
 	if err != nil {
 		logger.Fatal("Ошибка создания объекта хранилища:", err)
 	}
-	service := service.NewMetricService(storage, logger)
+
+	var dispatcher *audit.Dispatcher
+	if cnf.AuditFile != "" || cnf.AuditURL != "" {
+		dispatcher = audit.NewDispatcher(500, 8, logger)
+
+		if cnf.AuditFile != "" {
+			fileObs, err := audit.NewFileObserver(cnf.AuditFile, cnf.AuditFile, logger)
+			if err != nil {
+				logger.Fatal("Ошибка файлового аудита :", err)
+			}
+			dispatcher.Register(fileObs)
+		}
+
+		if cnf.AuditURL != "" {
+			remoteObs := audit.NewRemoteObserver(
+				cnf.AuditURL,
+				cnf.AuditURL,
+				logger,
+			)
+			dispatcher.Register(remoteObs)
+		}
+	}
+
+	cacher := cache.NewNoopCache()
+	if cnf.CacheTTLSec > 0 {
+		cacher = cache.NewGoCache(time.Duration(cnf.CacheTTLSec*int(time.Second)), 2*time.Duration(cnf.CacheTTLSec*int(time.Second)))
+	}
+
+	service := service.NewMetricService(storage, dispatcher, cacher, logger)
 	router := router.NewRouter(service, cnf.Key)
 
 	err = http.ListenAndServe(cnf.Address, router)

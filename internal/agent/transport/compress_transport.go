@@ -10,11 +10,14 @@ import (
 	"github.com/mersikovs/korob.git/internal/logger"
 )
 
+// CompressTransport is an http.RoundTripper wrapper that automatically
+// compresses outgoing HTTP request bodies.
 type CompressTransport struct {
 	Base   http.RoundTripper
 	Logger logger.Logger
 }
 
+// NewCompressTransport creates a new CompressTransport
 func NewCompressTransport(base http.RoundTripper, logger logger.Logger) *CompressTransport {
 	return &CompressTransport{
 		Base:   base,
@@ -22,6 +25,8 @@ func NewCompressTransport(base http.RoundTripper, logger logger.Logger) *Compres
 	}
 }
 
+// RoundTrip It reads the request body, compresses it with gzip,
+// replaces the body with the compressed buffer
 func (c *CompressTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 
 	if req.Body == nil {

@@ -18,11 +18,14 @@ import (
 	"github.com/jackc/pgerrcode"
 )
 
+// PgStorage is a PostgreSQL-backed implementation of Storage.
 type PgStorage struct {
 	pool   *pgxpool.Pool
 	logger logger.Logger
 }
 
+// NewPgStorage connects to PostgreSQL using the provided DSN
+// and returns a Storage implementation.
 func NewPgStorage(ctx context.Context, dsn string, l logger.Logger) (*PgStorage, error) {
 	curPool, err := db.NewPool(ctx, dsn)
 	if err != nil {
@@ -31,6 +34,7 @@ func NewPgStorage(ctx context.Context, dsn string, l logger.Logger) (*PgStorage,
 	return &PgStorage{pool: curPool, logger: l}, nil
 }
 
+// GetNamesList returns all metric names from PostgreSQL.
 func (s *PgStorage) GetNamesList(ctx context.Context) ([]string, error) {
 	query := `SELECT id FROM metrics`
 	rows, err := s.pool.Query(ctx, query)
@@ -39,22 +43,23 @@ func (s *PgStorage) GetNamesList(ctx context.Context) ([]string, error) {
 	}
 	defer rows.Close()
 
-	metrics, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (string, error) {
+	metrics := make([]string, 0, 256)
+	for rows.Next() {
 		var id string
-
-		if err := row.Scan(&id); err != nil {
-			return "", fmt.Errorf("scan row: %w", err)
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("scan row: %w", err)
 		}
+		metrics = append(metrics, id)
+	}
 
-		return id, nil
-	})
-	if err != nil {
-		return nil, err
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate rows: %w", err)
 	}
 
 	return metrics, nil
 }
 
+// Get retrieves a single metric from PostgreSQL by type and name.
 func (s *PgStorage) Get(ctx context.Context, mType, name string) (models.Metrics, error) {
 	query := `SELECT id, type, delta, value  FROM metrics WHERE id = $1 AND type  = $2`
 
@@ -83,7 +88,8 @@ func (s *PgStorage) Get(ctx context.Context, mType, name string) (models.Metrics
 	return m, nil
 }
 
-func (s *PgStorage) Save(ctx context.Context, mType, name string, m models.Metrics) error {
+// Save stores a single metric to PostgreSQL by type and name.
+func (s *PgStorage) Save(ctx context.Context, m models.Metrics) error {
 	query := `
         INSERT INTO metrics (id, type, delta, value)
         VALUES ($1, $2, $3, $4)
@@ -100,6 +106,7 @@ func (s *PgStorage) Save(ctx context.Context, mType, name string, m models.Metri
 	return nil
 }
 
+// BatchSave persists multiple metrics to PostgreSQL.
 func (s *PgStorage) BatchSave(ctx context.Context, metrics []models.Metrics) error {
 	if len(metrics) == 0 {
 		return nil
@@ -146,6 +153,7 @@ func (s *PgStorage) BatchSave(ctx context.Context, metrics []models.Metrics) err
 	return lastError
 }
 
+// Ping checks the connection to the PostgreSQL database.
 func (s *PgStorage) Ping(ctx context.Context) error {
 	return s.pool.Ping(ctx)
 }
@@ -171,6 +179,7 @@ func isPreExecutionError(err error) bool {
 	return false
 }
 
+// Close gracefully shuts down
 func (s *PgStorage) Close() error {
 	if s.pool == nil {
 		return nil

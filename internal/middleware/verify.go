@@ -10,6 +10,11 @@ import (
 	"github.com/mersikovs/korob.git/internal/signing"
 )
 
+// VerifySha256Middleware validates the HMAC-SHA256 signature of the request body.
+//
+// It bypasses validation if the key or [signing.HeaderName] is empty,
+// safely restores the request body for downstream handlers, and returns
+// 400 Bad Request on hash mismatch.
 func VerifySha256Middleware(key []byte, log logger.Logger) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

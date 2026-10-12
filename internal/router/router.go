@@ -1,19 +1,23 @@
+// Package router configures the HTTP routing, middleware, and API endpoints
+// for the metrics service.
 package router
 
 import (
 	"github.com/go-chi/chi/v5"
+	chimiddleware "github.com/go-chi/chi/v5/middleware"
 	"github.com/mersikovs/korob.git/internal/handler"
 	"github.com/mersikovs/korob.git/internal/middleware"
 	"github.com/mersikovs/korob.git/internal/service"
 )
 
+// NewRouter creates and configures a chi.Mux router for the metrics API.
 func NewRouter(service *service.MetricService, signKey []byte) *chi.Mux {
 	r := chi.NewRouter()
 
 	metricHandler := handler.NewMetricHandler(service)
 
 	r.Use(middleware.Logger(service.Logger))
-	r.Use(middleware.GzipResponseMiddleware)
+	r.Use(chimiddleware.Compress(5, "application/json", "text/html"))
 	r.Use(middleware.GzipRequestMiddleware)
 
 	if signKey != nil {
