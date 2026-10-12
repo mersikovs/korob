@@ -104,7 +104,7 @@ func (d *Dispatcher) Publish(event models.AuditEvent) {
 	case d.queue <- event:
 	default:
 		if d.logger != nil {
-			d.logger.Info("audit queue full, dropping event", "ts", event.Ts)
+			d.logger.Info("audit queue full, dropping event", "ts", event.TS)
 		}
 	}
 }

@@ -251,7 +251,7 @@ func (h *MetricHandler) UpdateMetricFromBody(w http.ResponseWriter, r *http.Requ
 
 	if h.metricService.Publisher != nil {
 		h.metricService.Publisher.Publish(models.AuditEvent{
-			Ts:        time.Now().Unix(),
+			TS:        time.Now().Unix(),
 			Metrics:   []string{req.ID},
 			IPAddress: extractIP(r),
 		})
@@ -306,7 +306,7 @@ func (h *MetricHandler) BatchUpdateMetricsFromBody(w http.ResponseWriter, r *htt
 
 	if h.metricService.Publisher != nil {
 		h.metricService.Publisher.Publish(models.AuditEvent{
-			Ts:        time.Now().Unix(),
+			TS:        time.Now().Unix(),
 			Metrics:   metricIDs,
 			IPAddress: extractIP(r),
 		})

@@ -87,13 +87,13 @@ func (r *RemoteObserver) Notify(ctx context.Context, event models.AuditEvent) {
 	if resp.StatusCode >= 400 {
 		r.logger.Info("remote observer: received error status",
 			"status", resp.StatusCode,
-			"request_ts", event.Ts)
+			"request_ts", event.TS)
 		return
 	}
 
 	r.logger.Info("remote observer: event sent successfully",
 		"status", resp.StatusCode,
-		"request_ts", event.Ts)
+		"request_ts", event.TS)
 }
 
 // GetID returns the unique identifier of this observer.
