@@ -47,6 +47,13 @@ func ServerParseConfig(fs *flag.FlagSet, args []string, env EnvSource) (*models.
 		cnf.Key = []byte(key)
 	}
 
+	if cache, exists := env.LookupEnv("CACHE_TTL_SEC"); exists {
+		cache, err := strconv.Atoi(cache)
+		if err == nil {
+			cnf.CacheTTLSec = cache
+		}
+	}
+
 	if si, exists := env.LookupEnv("STORE_INTERVAL"); exists {
 		si, err := strconv.Atoi(si)
 		if err == nil {

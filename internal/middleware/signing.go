@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"net/http"
+	"sync"
 
 	"github.com/mersikovs/korob.git/internal/logger"
 	"github.com/mersikovs/korob.git/internal/signing"
@@ -40,14 +41,30 @@ func (rw *responseCapture) Write(p []byte) (int, error) {
 	return rw.buf.Write(p)
 }
 
+var capturePool = sync.Pool{
+	New: func() any {
+		return &responseCapture{
+			buf: &bytes.Buffer{},
+		}
+	},
+}
+
 func SignResponseMiddleware(key []byte, log logger.Logger) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			rw := &responseCapture{
-				ResponseWriter: w,
-				buf:            &bytes.Buffer{},
-				statusCode:     http.StatusOK,
-			}
+
+			rw := capturePool.Get().(*responseCapture)
+
+			rw.ResponseWriter = w
+			rw.wroteHeader = false
+			rw.statusCode = http.StatusOK
+			rw.isExceeded = false
+			rw.buf.Reset()
+
+			defer func() {
+				rw.ResponseWriter = nil
+				capturePool.Put(rw)
+			}()
 
 			next.ServeHTTP(rw, r)
 
@@ -71,7 +88,7 @@ func SignResponseMiddleware(key []byte, log logger.Logger) func(http.Handler) ht
 			if key != nil && rw.buf.Len() > 0 {
 				hash := signing.CalcHash(rw.buf.Bytes(), key)
 				if hash != "" {
-					rw.Header().Set(signing.HeaderName, hash)
+					w.Header().Set(signing.HeaderName, hash)
 				}
 			}
 

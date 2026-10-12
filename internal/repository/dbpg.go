@@ -39,17 +39,17 @@ func (s *PgStorage) GetNamesList(ctx context.Context) ([]string, error) {
 	}
 	defer rows.Close()
 
-	metrics, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (string, error) {
+	metrics := make([]string, 0, 256)
+	for rows.Next() {
 		var id string
-
-		if err := row.Scan(&id); err != nil {
-			return "", fmt.Errorf("scan row: %w", err)
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("scan row: %w", err)
 		}
+		metrics = append(metrics, id)
+	}
 
-		return id, nil
-	})
-	if err != nil {
-		return nil, err
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate rows: %w", err)
 	}
 
 	return metrics, nil

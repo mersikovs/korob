@@ -4,9 +4,11 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"sort"
 	"strconv"
 
 	"github.com/mersikovs/korob.git/internal/audit"
+	"github.com/mersikovs/korob.git/internal/cache"
 	"github.com/mersikovs/korob.git/internal/logger"
 	models "github.com/mersikovs/korob.git/internal/model"
 	"github.com/mersikovs/korob.git/internal/repository"
@@ -17,13 +19,15 @@ type Pinger interface {
 }
 
 type MetricService struct {
+	cache     cache.MetricsCache
 	Publisher *audit.Dispatcher
 	repo      repository.Storage
 	Logger    logger.Logger
 }
 
-func NewMetricService(repo repository.Storage, dispatcher *audit.Dispatcher, log logger.Logger) *MetricService {
+func NewMetricService(repo repository.Storage, dispatcher *audit.Dispatcher, cache cache.MetricsCache, log logger.Logger) *MetricService {
 	return &MetricService{
+		cache:     cache,
 		Publisher: dispatcher,
 		repo:      repo,
 		Logger:    log,
@@ -108,7 +112,15 @@ func (m *MetricService) UpdateMetric(ctx context.Context, metricType, metricName
 }
 
 func (m *MetricService) ListMetrics(ctx context.Context) ([]string, error) {
-	return m.repo.GetNamesList(ctx)
+	if cached, ok := m.cache.Get("ListAllMetric"); ok {
+		return cached, nil
+	}
+	metrics, err := m.repo.GetNamesList(ctx)
+	if err != nil {
+		return nil, err
+	}
+	m.cache.Set("ListAllMetric", metrics)
+	return metrics, nil
 }
 
 func (m *MetricService) UpdateMetricFromStruct(ctx context.Context, metricType, metricName string, metricValue models.Metrics) error {
@@ -200,6 +212,13 @@ func (m *MetricService) UpdateMetricsFromStruct(ctx context.Context, metrics []m
 		}
 		metricsForSave = append(metricsForSave, m)
 	}
+
+	sort.Slice(metricsForSave, func(i, j int) bool {
+		if metricsForSave[i].ID != metricsForSave[j].ID {
+			return metricsForSave[i].ID < metricsForSave[j].ID
+		}
+		return metricsForSave[i].MType < metricsForSave[j].MType
+	})
 
 	return m.repo.BatchSave(ctx, metricsForSave)
 }

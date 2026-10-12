@@ -27,6 +27,7 @@ type ServerConfig struct {
 	Address         string
 	AuditFile       string
 	AuditUrl        string
+	CacheTTLSec     int
 	Key             []byte
 	DatabaseDSN     string
 	FileStoragePath string

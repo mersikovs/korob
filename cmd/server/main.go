@@ -7,8 +7,10 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"time"
 
 	"github.com/mersikovs/korob.git/internal/audit"
+	"github.com/mersikovs/korob.git/internal/cache"
 	"github.com/mersikovs/korob.git/internal/config"
 	"github.com/mersikovs/korob.git/internal/database"
 	"github.com/mersikovs/korob.git/internal/logger"
@@ -46,7 +48,7 @@ func main() {
 
 	var dispatcher *audit.Dispatcher
 	if cnf.AuditFile != "" || cnf.AuditUrl != "" {
-		dispatcher = audit.NewDispatcher(1000, 4, logger)
+		dispatcher = audit.NewDispatcher(500, 8, logger)
 
 		if cnf.AuditFile != "" {
 			fileObs, err := audit.NewFileObserver(cnf.AuditFile, cnf.AuditFile, logger)
@@ -66,7 +68,12 @@ func main() {
 		}
 	}
 
-	service := service.NewMetricService(storage, dispatcher, logger)
+	cacher := cache.NewNoopCache()
+	if cnf.CacheTTLSec > 0 {
+		cacher = cache.NewGoCache(time.Duration(cnf.CacheTTLSec*int(time.Second)), 2*time.Duration(cnf.CacheTTLSec*int(time.Second)))
+	}
+
+	service := service.NewMetricService(storage, dispatcher, cacher, logger)
 	router := router.NewRouter(service, cnf.Key)
 
 	err = http.ListenAndServe(cnf.Address, router)

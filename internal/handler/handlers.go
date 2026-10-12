@@ -2,10 +2,11 @@ package handler
 
 import (
 	"encoding/json"
-	"fmt"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
+	"text/template"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -33,40 +34,50 @@ func (h *MetricHandler) PingDB(w http.ResponseWriter, r *http.Request) {
 
 func (h *MetricHandler) ListMetrics(w http.ResponseWriter, r *http.Request) {
 	metricsNames, err := h.metricService.ListMetrics(r.Context())
-	var html string
-	if err == nil {
+	if err != nil {
+		h.metricService.Logger.Info("ошибка получения метрик:", "error", err)
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
 
-		html = `<!DOCTYPE html>
-<html>
-<head><title>Список метрик</title></head>
-<body>
-    <h1>Список метрик пуст</h1>
-</body>
-</html>`
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
 
-		if len(metricsNames) > 0 {
-			html = fmt.Sprintf(`<!DOCTYPE html>
+	estimatedSize := 200
+	for _, name := range metricsNames {
+		estimatedSize += len(name) + 10
+	}
+	estimatedSize = int(float64(estimatedSize) * 1.2)
+
+	var sb strings.Builder
+	sb.Grow(estimatedSize)
+
+	sb.WriteString(`<!DOCTYPE html>
 <html>
 <head><title>Список метрик</title></head>
 <body>
     <h1>Список метрик:</h1>
     <ul>
-		<li>
-			%s
-		</li>
-	</ul>
-</body>
-</html>`, strings.Join(metricsNames, "</li> <li>"))
+`)
+
+	if len(metricsNames) == 0 {
+		sb.WriteString("        <li>Список метрик пуст</li>\n")
+	} else {
+		for _, name := range metricsNames {
+			sb.WriteString("        <li>")
+			sb.WriteString(template.HTMLEscapeString(name))
+			sb.WriteString("</li>\n")
 		}
-
 	}
 
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.WriteHeader(http.StatusOK)
-	_, err = w.Write([]byte(html))
-	if err != nil {
-		h.metricService.Logger.Info("ошибка записи ответа: %v", err)
+	sb.WriteString(`    </ul>
+</body>
+</html>`)
+
+	if _, err := io.WriteString(w, sb.String()); err != nil {
+		h.metricService.Logger.Info("ошибка записи ответа: ", "error", err)
 	}
+
 }
 
 func (h *MetricHandler) GetMetricFromPath(w http.ResponseWriter, r *http.Request) {
