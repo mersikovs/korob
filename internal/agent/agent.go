@@ -15,9 +15,13 @@ import (
 	"github.com/shirou/gopsutil/v4/mem"
 )
 
+// NameRandomField is the metric name for the randomly generated value.
 const NameRandomField = "RandomValue"
+
+// NamePollCountField is the metric name for the total number of poll cycles.
 const NamePollCountField = "PollCount"
 
+// Agent orchestrates the collection, storage, and transmission of metrics.
 type Agent struct {
 	cnf    *config.Config
 	client Sender
@@ -43,6 +47,7 @@ type Agent struct {
 	mu sync.RWMutex
 }
 
+// NewAgent creates a new Agent with the specified configuration
 func NewAgent(cnf *config.Config, transport Sender, logger logger.Logger) *Agent {
 	return &Agent{
 		cnf:            cnf,
@@ -57,6 +62,7 @@ func NewAgent(cnf *config.Config, transport Sender, logger logger.Logger) *Agent
 	}
 }
 
+// Run starts the Agent's background workers for collecting and sending metrics.
 func (a *Agent) Run(ctx context.Context) {
 	a.ctx, a.cancel = context.WithCancel(ctx)
 	a.metricsChan = make(chan map[string]models.Metrics, 100)

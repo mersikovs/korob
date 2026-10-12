@@ -1,3 +1,4 @@
+// Package main is the entry point for the metrics server application.
 package main
 
 import (
@@ -47,7 +48,7 @@ func main() {
 	}
 
 	var dispatcher *audit.Dispatcher
-	if cnf.AuditFile != "" || cnf.AuditUrl != "" {
+	if cnf.AuditFile != "" || cnf.AuditURL != "" {
 		dispatcher = audit.NewDispatcher(500, 8, logger)
 
 		if cnf.AuditFile != "" {
@@ -58,10 +59,10 @@ func main() {
 			dispatcher.Register(fileObs)
 		}
 
-		if cnf.AuditUrl != "" {
+		if cnf.AuditURL != "" {
 			remoteObs := audit.NewRemoteObserver(
-				cnf.AuditUrl,
-				cnf.AuditUrl,
+				cnf.AuditURL,
+				cnf.AuditURL,
 				logger,
 			)
 			dispatcher.Register(remoteObs)

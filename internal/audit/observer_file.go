@@ -11,14 +11,17 @@ import (
 	models "github.com/mersikovs/korob.git/internal/model"
 )
 
+// FileObserver writes audit events to a local file with thread-safe append operations.
 type FileObserver struct {
-	ID       string
+	id       string
 	filePath string
 	file     *os.File
 	mu       sync.Mutex
 	logger   logger.Logger
 }
 
+// NewFileObserver creates a FileObserver and opens the target file in append mode.
+// Returns an error if the file cannot be created or opened.
 func NewFileObserver(id, filePath string, logger logger.Logger) (*FileObserver, error) {
 	file, err := os.OpenFile(filePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
@@ -26,14 +29,16 @@ func NewFileObserver(id, filePath string, logger logger.Logger) (*FileObserver, 
 	}
 
 	return &FileObserver{
-		ID:       id,
+		id:       id,
 		filePath: filePath,
 		file:     file,
 		logger:   logger,
 	}, nil
 }
 
-func (f *FileObserver) Notify(ctx context.Context, event models.AuditEvent) {
+// Notify marshals the audit event to JSON and appends it to the file,
+// ensuring thread-safe writes via mutex.
+func (f *FileObserver) Notify(_ context.Context, event models.AuditEvent) {
 	data, err := json.Marshal(event)
 	if err != nil {
 		if f.logger != nil {
@@ -55,10 +60,12 @@ func (f *FileObserver) Notify(ctx context.Context, event models.AuditEvent) {
 	}
 }
 
+// GetID returns the unique identifier of this observer.
 func (f *FileObserver) GetID() string {
-	return f.ID
+	return f.id
 }
 
+// Close safely closes the underlying file and releases system resources.
 func (f *FileObserver) Close() error {
 	f.mu.Lock()
 	defer f.mu.Unlock()

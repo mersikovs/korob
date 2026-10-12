@@ -24,6 +24,7 @@ func (rr *responseRecorder) WriteHeader(code int) {
 	rr.ResponseWriter.WriteHeader(code)
 }
 
+// Write sends the data to the client
 func (rr *responseRecorder) Write(b []byte) (int, error) {
 	if !rr.written {
 		rr.status = http.StatusOK
@@ -34,6 +35,7 @@ func (rr *responseRecorder) Write(b []byte) (int, error) {
 	return n, err
 }
 
+// Status returns the captured HTTP status code.
 func (rr *responseRecorder) Status() int {
 	if !rr.written {
 		return http.StatusOK
@@ -41,7 +43,7 @@ func (rr *responseRecorder) Status() int {
 	return rr.status
 }
 
-func (rr *responseRecorder) BytesWritten() int {
+func (rr *responseRecorder) bytesWritten() int {
 	return rr.size
 }
 
@@ -51,6 +53,7 @@ var recorderPool = sync.Pool{
 	},
 }
 
+// Logger returns an HTTP middleware that logs request details
 func Logger(log logger.Logger) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -76,7 +79,7 @@ func Logger(log logger.Logger) func(http.Handler) http.Handler {
 				"req.uri", r.RequestURI,
 				"req.duration", time.Since(start).Seconds(),
 				"res.status", rr.Status(),
-				"res.size", rr.BytesWritten(),
+				"res.size", rr.bytesWritten(),
 			)
 		})
 	}

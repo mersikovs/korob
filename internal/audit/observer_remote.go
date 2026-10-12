@@ -13,13 +13,17 @@ import (
 	models "github.com/mersikovs/korob.git/internal/model"
 )
 
+// RemoteObserver is an HTTP client wrapper that sends metrics to a remote server
+// with automatic retry logic and error handling.
 type RemoteObserver struct {
-	ID     string
+	id     string
 	client *retryablehttp.Client
 	url    string
 	logger logger.Logger
 }
 
+// NewRemoteObserver creates an HTTP client configured for resilient
+// communication with a remote metrics server, including automatic retries.
 func NewRemoteObserver(id, targetURL string, log logger.Logger) *RemoteObserver {
 
 	client := retryablehttp.NewClient()
@@ -29,7 +33,7 @@ func NewRemoteObserver(id, targetURL string, log logger.Logger) *RemoteObserver 
 	client.RetryWaitMax = 30 * time.Second
 	client.Logger = log
 
-	client.CheckRetry = func(ctx context.Context, resp *http.Response, err error) (bool, error) {
+	client.CheckRetry = func(_ context.Context, resp *http.Response, err error) (bool, error) {
 		if err != nil {
 			return true, nil
 		}
@@ -50,13 +54,14 @@ func NewRemoteObserver(id, targetURL string, log logger.Logger) *RemoteObserver 
 	}
 
 	return &RemoteObserver{
-		ID:     id,
+		id:     id,
 		client: client,
 		url:    targetURL,
 		logger: log,
 	}
 }
 
+// Notify sends an audit event to the remote server.
 func (r *RemoteObserver) Notify(ctx context.Context, event models.AuditEvent) {
 	data, err := json.Marshal(event)
 	if err != nil {
@@ -76,7 +81,8 @@ func (r *RemoteObserver) Notify(ctx context.Context, event models.AuditEvent) {
 		r.logger.Info("remote observer: request failed after all retries", "error", err)
 		return
 	}
-	defer resp.Body.Close()
+
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode >= 400 {
 		r.logger.Info("remote observer: received error status",
@@ -90,10 +96,12 @@ func (r *RemoteObserver) Notify(ctx context.Context, event models.AuditEvent) {
 		"request_ts", event.Ts)
 }
 
+// GetID returns the unique identifier of this observer.
 func (r *RemoteObserver) GetID() string {
-	return r.ID
+	return r.id
 }
 
+// Close releases idle HTTP connections held by the underlying client.
 func (r *RemoteObserver) Close() error {
 	if r.client != nil && r.client.HTTPClient != nil {
 		r.client.HTTPClient.CloseIdleConnections()

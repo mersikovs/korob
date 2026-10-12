@@ -1,3 +1,5 @@
+// Package handler provides HTTP endpoints for metric operations,
+// handling request parsing, validation, and response formatting.
 package handler
 
 import (
@@ -14,14 +16,21 @@ import (
 	"github.com/mersikovs/korob.git/internal/service"
 )
 
+// MetricHandler processes HTTP requests for metric operations,
+// delegating business logic to the MetricService.
 type MetricHandler struct {
 	metricService *service.MetricService
 }
 
+// NewMetricHandler creates a MetricHandler with the provided MetricService dependency.
 func NewMetricHandler(metricService *service.MetricService) *MetricHandler {
 	return &MetricHandler{metricService: metricService}
 }
 
+// PingDB is an HTTP handler that checks the database connectivity.
+//
+// It returns 200 OK with "text/plain" content type if the database is reachable,
+// or 500 Internal Server Error if the ping fails
 func (h *MetricHandler) PingDB(w http.ResponseWriter, r *http.Request) {
 	err := h.metricService.Ping(r.Context())
 	if err != nil {
@@ -32,6 +41,10 @@ func (h *MetricHandler) PingDB(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
+// ListMetrics renders an HTML page displaying all available metric names.
+//
+//   - Returns 200 OK with "text/html; charset=utf-8" on success.
+//   - Returns 500 Internal Server Error if metric retrieval fails.
 func (h *MetricHandler) ListMetrics(w http.ResponseWriter, r *http.Request) {
 	metricsNames, err := h.metricService.ListMetrics(r.Context())
 	if err != nil {
@@ -80,6 +93,11 @@ func (h *MetricHandler) ListMetrics(w http.ResponseWriter, r *http.Request) {
 
 }
 
+// GetMetricFromPath is an HTTP handler that retrieves a single metric's value
+// based on the "type" and "name" parameters extracted from the URL path.
+//
+//   - Returns 200 OK with "text/plain; charset=utf-8" and the metric value on success.
+//   - Returns 404 Not Found if the metric name is missing in the path or the metric does not exist in storage.
 func (h *MetricHandler) GetMetricFromPath(w http.ResponseWriter, r *http.Request) {
 	metricType := chi.URLParam(r, "type")
 	metricName := chi.URLParam(r, "name")
@@ -103,6 +121,13 @@ func (h *MetricHandler) GetMetricFromPath(w http.ResponseWriter, r *http.Request
 	}
 }
 
+// FetchMetricFromBody retrieves a metric's value based on a JSON payload in the request body.
+//
+//   - Returns 200 OK with "application/json" and the strongly-typed metric
+//     (Delta as int64 for Counter, Value as float64 for Gauge).
+//   - Returns 415 Unsupported Media Type if Content-Type is not "application/json".
+//   - Returns 400 Bad Request on invalid JSON, unknown fields, or type parsing mismatches.
+//   - Returns 404 Not Found if the metric ID is missing or the metric does not exist in storage.
 func (h *MetricHandler) FetchMetricFromBody(w http.ResponseWriter, r *http.Request) {
 	if r.Header.Get("Content-Type") != "application/json" {
 		w.WriteHeader(http.StatusUnsupportedMediaType)
@@ -162,6 +187,11 @@ func (h *MetricHandler) FetchMetricFromBody(w http.ResponseWriter, r *http.Reque
 	}
 }
 
+// UpdateMetricFromPath updates a single metric using parameters extracted from the URL path.
+//
+//   - Returns 200 OK with "text/plain; charset=utf-8" on success.
+//   - Returns 404 Not Found if the metric name is missing in the path.
+//   - Returns 400 Bad Request if the service fails to process the update.
 func (h *MetricHandler) UpdateMetricFromPath(w http.ResponseWriter, r *http.Request) {
 	metricType := chi.URLParam(r, "type")
 	metricName := chi.URLParam(r, "name")
@@ -182,6 +212,12 @@ func (h *MetricHandler) UpdateMetricFromPath(w http.ResponseWriter, r *http.Requ
 	w.WriteHeader(http.StatusOK)
 }
 
+// UpdateMetricFromBody updates a single metric based on a JSON payload in the request body.
+//
+//   - Returns 200 OK with "text/plain; charset=utf-8" on success.
+//   - Returns 415 Unsupported Media Type if Content-Type is not "application/json".
+//   - Returns 400 Bad Request on invalid JSON, unknown fields, or service update failures.
+//   - Returns 404 Not Found if the metric ID is missing in the payload.
 func (h *MetricHandler) UpdateMetricFromBody(w http.ResponseWriter, r *http.Request) {
 	if r.Header.Get("Content-Type") != "application/json" {
 		w.WriteHeader(http.StatusUnsupportedMediaType)
@@ -222,6 +258,12 @@ func (h *MetricHandler) UpdateMetricFromBody(w http.ResponseWriter, r *http.Requ
 	}
 }
 
+// BatchUpdateMetricsFromBody updates multiple metrics based on a JSON array in the request body.
+//
+//   - Returns 200 OK with "text/plain; charset=utf-8" on success.
+//   - Returns 415 Unsupported Media Type if Content-Type is not "application/json".
+//   - Returns 400 Bad Request on invalid JSON, unknown fields, or service update failures.
+//   - Returns 404 Not Found if the payload contains no metrics with a valid ID.
 func (h *MetricHandler) BatchUpdateMetricsFromBody(w http.ResponseWriter, r *http.Request) {
 	if r.Header.Get("Content-Type") != "application/json" {
 		w.WriteHeader(http.StatusUnsupportedMediaType)

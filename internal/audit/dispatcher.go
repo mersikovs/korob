@@ -8,6 +8,8 @@ import (
 	models "github.com/mersikovs/korob.git/internal/model"
 )
 
+// Dispatcher manages a pool of background workers that asynchronously process
+// audit events from a buffered queue and distribute them to registered Observers.
 type Dispatcher struct {
 	mu         sync.RWMutex
 	observers  map[string]Observer
@@ -21,6 +23,8 @@ type Dispatcher struct {
 	cancel context.CancelFunc
 }
 
+// NewDispatcher creates a Dispatcher with the specified queue size and worker count.
+// It applies safe defaults for invalid values and immediately starts the background worker pool.
 func NewDispatcher(queueSize int, maxWorkers int, logger logger.Logger) *Dispatcher {
 	if queueSize <= 0 {
 		queueSize = 1000
@@ -77,6 +81,7 @@ func (d *Dispatcher) processEvent(event models.AuditEvent) {
 	}
 }
 
+// Register adds an Observer to the dispatcher.
 func (d *Dispatcher) Register(o Observer) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
@@ -85,6 +90,7 @@ func (d *Dispatcher) Register(o Observer) {
 	}
 }
 
+// Publish sends an audit event to the processing queue.
 func (d *Dispatcher) Publish(event models.AuditEvent) {
 	d.mu.RLock()
 	isClosed := d.closed
@@ -103,6 +109,7 @@ func (d *Dispatcher) Publish(event models.AuditEvent) {
 	}
 }
 
+// Shutdown initiates a graceful shutdown of the worker pool.
 func (d *Dispatcher) Shutdown(ctx context.Context) {
 	d.mu.Lock()
 	if d.closed {
@@ -115,9 +122,20 @@ func (d *Dispatcher) Shutdown(ctx context.Context) {
 
 	close(d.queue)
 
-	d.wg.Wait()
+	done := make(chan struct{})
+	go func() {
+		d.wg.Wait()
+		close(done)
+	}()
 
-	if d.logger != nil {
-		d.logger.Info("audit worker pool shut down gracefully")
+	select {
+	case <-done:
+		if d.logger != nil {
+			d.logger.Info("audit worker pool shut down gracefully")
+		}
+	case <-ctx.Done():
+		if d.logger != nil {
+			d.logger.Info("audit shutdown timed out or cancelled", "error", ctx.Err())
+		}
 	}
 }

@@ -20,6 +20,8 @@ type responseCapture struct {
 	isExceeded  bool
 }
 
+// WriteHeader captures the status code and defers writing it to the
+// underlying ResponseWriter.
 func (rw *responseCapture) WriteHeader(code int) {
 	if rw.wroteHeader {
 		return
@@ -28,6 +30,7 @@ func (rw *responseCapture) WriteHeader(code int) {
 	rw.wroteHeader = true
 }
 
+// Write buffers the response body in memory instead of sending it to the client.
 func (rw *responseCapture) Write(p []byte) (int, error) {
 	if !rw.wroteHeader {
 		rw.WriteHeader(http.StatusOK)
@@ -49,6 +52,8 @@ var capturePool = sync.Pool{
 	},
 }
 
+// SignResponseMiddleware intercepts the HTTP response to compute and attach
+// an HMAC-SHA256 signature of the body to the [signing.HeaderName] header.
 func SignResponseMiddleware(key []byte, log logger.Logger) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

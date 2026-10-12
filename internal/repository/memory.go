@@ -13,13 +13,17 @@ import (
 	models "github.com/mersikovs/korob.git/internal/model"
 )
 
+// MemoryStorage is an in-memory implementation of Storage with optional
+// periodic persistence to disk.
 type MemoryStorage struct {
-	mu            sync.RWMutex
+	mu sync.RWMutex
+	// Metrics is a two-level map keyed by metric type and name.
 	Metrics       map[string]map[string]models.Metrics
 	filePath      string
 	storeInterval atomic.Int64
 }
 
+// NewMemoryStorage creates an in-memory storage
 func NewMemoryStorage(ctx context.Context, cnf *models.ServerConfig, logger logger.Logger) (*MemoryStorage, error) {
 	ms := MemoryStorage{
 		Metrics:  make(map[string]map[string]models.Metrics),
@@ -37,7 +41,8 @@ func NewMemoryStorage(ctx context.Context, cnf *models.ServerConfig, logger logg
 	return &ms, nil
 }
 
-func (s *MemoryStorage) GetNamesList(ctx context.Context) ([]string, error) {
+// GetNamesList returns all metric names from memory.
+func (s *MemoryStorage) GetNamesList(_ context.Context) ([]string, error) {
 	s.mu.RLock()
 
 	list := make([]string, 0)
@@ -53,7 +58,8 @@ func (s *MemoryStorage) GetNamesList(ctx context.Context) ([]string, error) {
 	return list, nil
 }
 
-func (s *MemoryStorage) Get(ctx context.Context, mType, name string) (models.Metrics, error) {
+// Get retrieves a single metric from memory by type and name.
+func (s *MemoryStorage) Get(_ context.Context, mType, name string) (models.Metrics, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	typeMap, ok := s.Metrics[mType]
@@ -68,14 +74,15 @@ func (s *MemoryStorage) Get(ctx context.Context, mType, name string) (models.Met
 	return metric, nil
 }
 
-func (s *MemoryStorage) Save(ctx context.Context, mType, name string, m models.Metrics) error {
+// Save stores a single metric in memory by type and name.
+func (s *MemoryStorage) Save(_ context.Context, m models.Metrics) error {
 	s.mu.Lock()
 
-	if _, ok := s.Metrics[mType]; !ok {
-		s.Metrics[mType] = make(map[string]models.Metrics)
+	if _, ok := s.Metrics[m.MType]; !ok {
+		s.Metrics[m.MType] = make(map[string]models.Metrics)
 	}
 
-	s.Metrics[mType][name] = m
+	s.Metrics[m.MType][m.ID] = m
 	s.mu.Unlock()
 	currentInterval := int(s.storeInterval.Load())
 	if currentInterval == 0 {
@@ -87,7 +94,8 @@ func (s *MemoryStorage) Save(ctx context.Context, mType, name string, m models.M
 	return nil
 }
 
-func (s *MemoryStorage) BatchSave(ctx context.Context, metrics []models.Metrics) error {
+// BatchSave persists multiple metrics in memory at once.
+func (s *MemoryStorage) BatchSave(_ context.Context, metrics []models.Metrics) error {
 	if len(metrics) == 0 {
 		return nil
 	}
@@ -124,6 +132,7 @@ func (s *MemoryStorage) BatchSave(ctx context.Context, metrics []models.Metrics)
 	return nil
 }
 
+// Store persists the current in-memory metrics to disk.
 func (s *MemoryStorage) Store() error {
 	s.mu.RLock()
 	metrics := s.Metrics
@@ -144,6 +153,7 @@ func (s *MemoryStorage) Store() error {
 	return os.WriteFile(s.filePath, jsonData, 0644)
 }
 
+// Restore loads persisted metrics from disk into memory at startup.
 func (s *MemoryStorage) Restore() error {
 
 	b, err := os.ReadFile(s.filePath)
@@ -176,6 +186,8 @@ func (s *MemoryStorage) Restore() error {
 	return nil
 }
 
+// StartPeriodicSave launches a background goroutine to periodically
+// persist in-memory metrics to disk.
 func (s *MemoryStorage) StartPeriodicSave(ctx context.Context, interval int, l logger.Logger) {
 	if interval == 0 {
 		return
@@ -208,6 +220,8 @@ func (s *MemoryStorage) StartPeriodicSave(ctx context.Context, interval int, l l
 	}()
 }
 
+// Ping is a no-op for MemoryStorage and always returns nil,
+// as in-memory storage requires no connection check.
 func (s *MemoryStorage) Ping(_ context.Context) error {
 	return nil
 }

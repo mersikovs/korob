@@ -1,3 +1,5 @@
+// Package router configures the HTTP routing, middleware, and API endpoints
+// for the metrics service.
 package router
 
 import (
@@ -6,11 +8,9 @@ import (
 	"github.com/mersikovs/korob.git/internal/handler"
 	"github.com/mersikovs/korob.git/internal/middleware"
 	"github.com/mersikovs/korob.git/internal/service"
-
-	"net/http"
-	_ "net/http/pprof"
 )
 
+// NewRouter creates and configures a chi.Mux router for the metrics API.
 func NewRouter(service *service.MetricService, signKey []byte) *chi.Mux {
 	r := chi.NewRouter()
 
@@ -18,6 +18,7 @@ func NewRouter(service *service.MetricService, signKey []byte) *chi.Mux {
 
 	r.Use(middleware.Logger(service.Logger))
 	r.Use(chimiddleware.Compress(5, "application/json", "text/html"))
+	r.Use(middleware.GzipRequestMiddleware)
 
 	if signKey != nil {
 		r.Use(middleware.VerifySha256Middleware(signKey, service.Logger))
@@ -34,8 +35,6 @@ func NewRouter(service *service.MetricService, signKey []byte) *chi.Mux {
 	r.Post("/update/{type}/{name}/{value}", metricHandler.UpdateMetricFromPath)
 	r.Post("/update/", metricHandler.UpdateMetricFromBody)
 	r.Post("/updates/", metricHandler.BatchUpdateMetricsFromBody)
-
-	r.Mount("/debug/pprof", http.HandlerFunc(http.DefaultServeMux.ServeHTTP))
 
 	return r
 }

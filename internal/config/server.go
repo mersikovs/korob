@@ -7,12 +7,14 @@ import (
 	models "github.com/mersikovs/korob.git/internal/model"
 )
 
+// ServerParseConfig builds server configuration by merging command-line flags
+// and environment variables, with environment variables taking precedence.
 func ServerParseConfig(fs *flag.FlagSet, args []string, env EnvSource) (*models.ServerConfig, error) {
 	cnf := &models.ServerConfig{}
 	key := ""
 	fs.StringVar(&cnf.Address, "a", "localhost:8080", "адрес эндпоинта HTTP-сервера")
 	fs.StringVar(&cnf.AuditFile, "audit-file", "", "путь к файлу, в который сохраняются логи аудита")
-	fs.StringVar(&cnf.AuditUrl, "audit-url", "", "полный URL, по которому отправляются логи аудита")
+	fs.StringVar(&cnf.AuditURL, "audit-url", "", "полный URL, по которому отправляются логи аудита")
 	fs.StringVar(&cnf.DatabaseDSN, "d", "", "строка подключения к БД (DSN)")
 	fs.StringVar(&key, "k", "", "ключ подписи данных")
 	fs.IntVar(&cnf.StoreInterval, "i", 300, "интервал времени в секундах, по истечении которого текущие показания сервера сохраняются на диск")
@@ -31,8 +33,8 @@ func ServerParseConfig(fs *flag.FlagSet, args []string, env EnvSource) (*models.
 		cnf.AuditFile = aFile
 	}
 
-	if aUrl, exists := env.LookupEnv("AUDIT_URL"); exists && aUrl != "" {
-		cnf.AuditUrl = aUrl
+	if aURL, exists := env.LookupEnv("AUDIT_URL"); exists && aURL != "" {
+		cnf.AuditURL = aURL
 	}
 
 	if dsn, exists := env.LookupEnv("DATABASE_DSN"); exists && dsn != "" {
