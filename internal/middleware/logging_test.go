@@ -27,7 +27,7 @@ func (l *testLogger) Info(msg string, keysAndValues ...any) {
 	l.logs = append(l.logs, addData)
 }
 
-func (l *testLogger) Fatal(msg string, keysAndValues ...any) {}
+func (l *testLogger) Fatal(_ string, _ ...any) {}
 
 func TestLogger(t *testing.T) {
 	type req struct {
@@ -100,7 +100,7 @@ func TestLogger(t *testing.T) {
 			log := &testLogger{}
 			for _, testreq := range tt.requests {
 
-				handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				handler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 					if testreq.handlerStatus != 0 {
 						w.WriteHeader(testreq.handlerStatus)
 					}

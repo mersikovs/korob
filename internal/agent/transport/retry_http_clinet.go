@@ -12,11 +12,13 @@ import (
 	"time"
 )
 
+// RetryClient wraps an http.Client to provide automatic request retries
 type RetryClient struct {
 	client *http.Client
 	delays []time.Duration
 }
 
+// New creates a RetryClient using the provided base HTTP client
 func New(client *http.Client, delays []time.Duration) *RetryClient {
 	return &RetryClient{
 		client: client,
@@ -24,6 +26,7 @@ func New(client *http.Client, delays []time.Duration) *RetryClient {
 	}
 }
 
+// Do executes the HTTP request
 func (c *RetryClient) Do(req *http.Request) (*http.Response, error) {
 	var bodyBytes []byte
 
