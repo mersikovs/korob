@@ -5,22 +5,25 @@ package repository
 import (
 	"context"
 	"strconv"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	_ "github.com/golang-migrate/migrate/v4/database/postgres"
 	_ "github.com/golang-migrate/migrate/v4/source/file"
+	"github.com/mersikovs/korob.git/internal/config/db"
 	"github.com/mersikovs/korob.git/internal/database"
 	"github.com/mersikovs/korob.git/internal/logger"
 	models "github.com/mersikovs/korob.git/internal/model"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/testcontainers/testcontainers-go"
 	"github.com/testcontainers/testcontainers-go/modules/postgres"
 	"github.com/testcontainers/testcontainers-go/wait"
 )
 
-func setupPostgresContainer(t *testing.T) (*postgres.PostgresContainer, string) {
-	t.Helper()
+func setupPostgresContainer(tb testing.TB) (*postgres.PostgresContainer, string) {
+	tb.Helper()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
@@ -37,22 +40,22 @@ func setupPostgresContainer(t *testing.T) (*postgres.PostgresContainer, string) 
 		),
 	)
 	if err != nil {
-		t.Fatalf("failed to start postgres container: %v", err)
+		tb.Fatalf("failed to start postgres container: %v", err)
 	}
 
-	t.Cleanup(func() {
+	tb.Cleanup(func() {
 		if err := container.Terminate(ctx); err != nil {
-			t.Logf("failed to terminate container: %v", err)
+			tb.Logf("failed to terminate container: %v", err)
 		}
 	})
 
 	dsn, err := container.ConnectionString(ctx, "sslmode=disable")
 	if err != nil {
-		t.Fatalf("failed to get connection string: %v", err)
+		tb.Fatalf("failed to get connection string: %v", err)
 	}
 
 	if err := database.MigrateUp(dsn, "file://../../migrations"); err != nil {
-		t.Fatalf("Ошибка миграции базы данных: %v", err)
+		tb.Fatalf("Ошибка миграции базы данных: %v", err)
 	}
 
 	return container, dsn
@@ -423,4 +426,298 @@ func TestPgStorage_Get_TableDriven(t *testing.T) {
 			cancel()
 		})
 	}
+}
+
+type noopLogger struct{}
+
+func (n noopLogger) Info(msg string, args ...any)  {}
+func (n noopLogger) Error(msg string, args ...any) {}
+func (n noopLogger) Debug(msg string, args ...any) {}
+func (n noopLogger) Fatal(msg string, args ...any) {}
+
+func BenchmarkPgStorageGet(b *testing.B) {
+	_, dsn := setupPostgresContainer(b)
+
+	ctx := context.Background()
+	pool, err := db.NewPool(ctx, dsn)
+	if err != nil {
+		b.Fatalf("failed to create pool via db.NewPool: %v", err)
+	}
+	b.Cleanup(pool.Close)
+
+	store, err := NewPgStorage(ctx, dsn, noopLogger{})
+	if err != nil {
+		b.Fatalf("failed to create pool via db.NewPool: %v", err)
+	}
+
+	if _, err := pool.Exec(ctx, `TRUNCATE TABLE metrics`); err != nil {
+		b.Fatalf("failed to truncate: %v", err)
+	}
+
+	testMetric := models.Metrics{
+		ID:    "bench_get_counter",
+		MType: models.Counter,
+		Delta: new(int64(42)),
+		Value: nil,
+	}
+
+	if _, err := pool.Exec(ctx,
+		`INSERT INTO metrics (id, type, delta, value) VALUES ($1, $2, $3, $4)`,
+		testMetric.ID, testMetric.MType, testMetric.Delta, testMetric.Value,
+	); err != nil {
+		b.Fatalf("failed to insert test data: %v", err)
+	}
+
+	b.Run("ExistingMetric", func(b *testing.B) {
+		b.ReportAllocs()
+
+		var sink models.Metrics
+
+		for b.Loop() {
+			m, err := store.Get(ctx, models.Counter, "bench_get_counter")
+			if err != nil {
+				b.Fatalf("unexpected error: %v", err)
+			}
+			sink = m
+		}
+		_ = sink
+	})
+
+	b.Run("NonExistingMetric", func(b *testing.B) {
+		b.ReportAllocs()
+
+		var counter atomic.Int64
+
+		for b.Loop() {
+			name := "non_existent_1metric_" + strconv.FormatInt(counter.Add(1), 10)
+
+			_, err := store.Get(ctx, models.Counter, name)
+			if err == nil {
+				b.Fatal("expected error, got nil")
+			}
+		}
+	})
+}
+
+func BenchmarkPgStorageSave(b *testing.B) {
+	_, dsn := setupPostgresContainer(b)
+	ctx := context.Background()
+
+	store, err := NewPgStorage(ctx, dsn, noopLogger{})
+	if err != nil {
+		b.Fatalf("failed to create storage: %v", err)
+	}
+	b.Cleanup(func() {
+		if err := store.Close(); err != nil {
+			b.Logf("failed to close storage: %v", err)
+		}
+	})
+
+	// Очистка таблицы перед каждым запуском бенча
+	if _, err := store.pool.Exec(ctx, `TRUNCATE TABLE metrics`); err != nil {
+		b.Fatalf("failed to truncate: %v", err)
+	}
+
+	// Сценарий 1: INSERT новой метрики Counter (delta)
+	b.Run("InsertNewCounter", func(b *testing.B) {
+		b.ReportAllocs()
+		var counter atomic.Int64
+
+		for b.Loop() {
+			id := "new_counter_" + strconv.FormatInt(counter.Add(1), 10)
+			m := models.Metrics{
+				ID:    id,
+				MType: models.Counter,
+				Delta: ptr(int64(42)),
+				Value: nil,
+			}
+			if err := store.Save(ctx, m); err != nil {
+				b.Fatalf("save failed: %v", err)
+			}
+		}
+	})
+
+	// Сценарий 2: INSERT новой метрики Gauge (value)
+	b.Run("InsertNewGauge", func(b *testing.B) {
+		b.ReportAllocs()
+		var counter atomic.Int64
+
+		for b.Loop() {
+			id := "new_gauge_" + strconv.FormatInt(counter.Add(1), 10)
+			m := models.Metrics{
+				ID:    id,
+				MType: models.Gauge,
+				Delta: nil,
+				Value: ptr(float64(3.14)),
+			}
+			if err := store.Save(ctx, m); err != nil {
+				b.Fatalf("save failed: %v", err)
+			}
+		}
+	})
+
+	// Сценарий 3: UPDATE существующей метрики Counter (ON CONFLICT)
+	b.Run("UpdateExistingCounter", func(b *testing.B) {
+		b.ReportAllocs()
+
+		// Предварительно создаем метрику, которую будем обновлять
+		existingID := "existing_counter"
+		if err := store.Save(ctx, models.Metrics{
+			ID:    existingID,
+			MType: models.Counter,
+			Delta: ptr(int64(100)),
+		}); err != nil {
+			b.Fatalf("failed to create existing metric: %v", err)
+		}
+
+		for b.Loop() {
+			m := models.Metrics{
+				ID:    existingID,
+				MType: models.Counter,
+				Delta: ptr(int64(42)), // Новое значение delta
+			}
+			if err := store.Save(ctx, m); err != nil {
+				b.Fatalf("save failed: %v", err)
+			}
+		}
+	})
+
+	// Сценарий 4: UPDATE существующей метрики Gauge (ON CONFLICT)
+	b.Run("UpdateExistingGauge", func(b *testing.B) {
+		b.ReportAllocs()
+
+		// Предварительно создаем метрику
+		existingID := "existing_gauge"
+		if err := store.Save(ctx, models.Metrics{
+			ID:    existingID,
+			MType: models.Gauge,
+			Value: ptr(float64(100.0)),
+		}); err != nil {
+			b.Fatalf("failed to create existing metric: %v", err)
+		}
+
+		for b.Loop() {
+			m := models.Metrics{
+				ID:    existingID,
+				MType: models.Gauge,
+				Value: ptr(float64(42.5)), // Новое значение value
+			}
+			if err := store.Save(ctx, m); err != nil {
+				b.Fatalf("save failed: %v", err)
+			}
+		}
+	})
+}
+
+func BenchmarkPgStorageBatchSave(b *testing.B) {
+	_, dsn := setupPostgresContainer(b)
+	ctx := context.Background()
+
+	store, err := NewPgStorage(ctx, dsn, noopLogger{})
+	if err != nil {
+		b.Fatalf("failed to create storage: %v", err)
+	}
+	b.Cleanup(func() {
+		if err := store.Close(); err != nil {
+			b.Logf("failed to close storage: %v", err)
+		}
+	})
+
+	if _, err := store.pool.Exec(ctx, `TRUNCATE TABLE metrics`); err != nil {
+		b.Fatalf("failed to truncate: %v", err)
+	}
+
+	b.Run("BatchSize10_Insert", func(b *testing.B) {
+		b.ReportAllocs()
+		var counter atomic.Int64
+
+		for b.Loop() {
+			start := counter.Add(10)
+			batch := make([]models.Metrics, 10)
+			for i := 0; i < 10; i++ {
+				idx := start - 10 + int64(i)
+				if i%2 == 0 {
+					batch[i] = models.Metrics{
+						ID:    "b10_c_" + strconv.FormatInt(idx, 10),
+						MType: models.Counter,
+						Delta: ptr(int64(idx)),
+					}
+				} else {
+					batch[i] = models.Metrics{
+						ID:    "b10_g_" + strconv.FormatInt(idx, 10),
+						MType: models.Gauge,
+						Value: ptr(float64(idx)),
+					}
+				}
+			}
+
+			if err := store.BatchSave(ctx, batch); err != nil {
+				b.Fatalf("batch save failed: %v", err)
+			}
+		}
+	})
+
+	b.Run("BatchSize100_Insert", func(b *testing.B) {
+		b.ReportAllocs()
+		var counter atomic.Int64
+
+		for b.Loop() {
+			start := counter.Add(100)
+			batch := make([]models.Metrics, 100)
+			for i := 0; i < 100; i++ {
+				idx := start - 100 + int64(i)
+				if i%2 == 0 {
+					batch[i] = models.Metrics{
+						ID:    "b100_c_" + strconv.FormatInt(idx, 10),
+						MType: models.Counter,
+						Delta: ptr(int64(idx)),
+					}
+				} else {
+					batch[i] = models.Metrics{
+						ID:    "b100_g_" + strconv.FormatInt(idx, 10),
+						MType: models.Gauge,
+						Value: ptr(float64(idx)),
+					}
+				}
+			}
+
+			if err := store.BatchSave(ctx, batch); err != nil {
+				b.Fatalf("batch save failed: %v", err)
+			}
+		}
+	})
+
+	b.Run("BatchSize10_Update", func(b *testing.B) {
+		b.ReportAllocs()
+
+		baseBatch := make([]models.Metrics, 10)
+		for i := 0; i < 10; i++ {
+			if i%2 == 0 {
+				baseBatch[i] = models.Metrics{ID: "update_c_" + strconv.Itoa(i), MType: models.Counter, Delta: ptr(int64(100))}
+			} else {
+				baseBatch[i] = models.Metrics{ID: "update_g_" + strconv.Itoa(i), MType: models.Gauge, Value: ptr(float64(100.0))}
+			}
+		}
+
+		if err := store.BatchSave(ctx, baseBatch); err != nil {
+			b.Fatalf("failed to seed data: %v", err)
+		}
+
+		var counter atomic.Int64
+		for b.Loop() {
+			batch := make([]models.Metrics, 10)
+			for i := range 10 {
+				idx := counter.Add(1)
+				if i%2 == 0 {
+					batch[i] = models.Metrics{ID: "update_c_" + strconv.Itoa(i), MType: models.Counter, Delta: ptr(int64(idx))}
+				} else {
+					batch[i] = models.Metrics{ID: "update_g_" + strconv.Itoa(i), MType: models.Gauge, Value: ptr(float64(float64(idx)))}
+				}
+			}
+
+			if err := store.BatchSave(ctx, batch); err != nil {
+				b.Fatalf("batch save failed: %v", err)
+			}
+		}
+	})
 }

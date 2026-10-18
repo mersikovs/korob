@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -71,7 +72,7 @@ func (s *PgStorage) Get(ctx context.Context, mType, name string) (models.Metrics
 	err := row.Scan(&m.ID, &m.MType, &delta, &value)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return models.Metrics{}, nil
+			return models.Metrics{}, fmt.Errorf("metric not found: %w", err)
 		}
 		return models.Metrics{}, fmt.Errorf("scan metric: %w", err)
 	}
@@ -95,8 +96,13 @@ func (s *PgStorage) Save(ctx context.Context, m models.Metrics) error {
         VALUES ($1, $2, $3, $4)
         ON CONFLICT (id, type) DO UPDATE
         SET 
-            delta = EXCLUDED.delta,
-            value = EXCLUDED.value`
+           value = CASE
+            WHEN EXCLUDED.type = 'gauge' THEN EXCLUDED.value
+            ELSE metrics.value END,
+		delta = CASE 
+			WHEN EXCLUDED.type = 'counter' THEN COALESCE(metrics.delta + EXCLUDED.delta, metrics.delta, EXCLUDED.delta)
+			ELSE metrics.delta
+        END`
 
 	_, err := s.pool.Exec(ctx, query, m.ID, m.MType, m.Delta, m.Value)
 	if err != nil {
@@ -113,8 +119,11 @@ func (s *PgStorage) BatchSave(ctx context.Context, metrics []models.Metrics) err
 	}
 
 	var sb strings.Builder
+	sb.Grow(len(metrics) * 30)
+
 	sb.WriteString("INSERT INTO metrics (id, type, delta, value) VALUES ")
 
+	var numBuf [20]byte
 	args := make([]any, 0, len(metrics)*4)
 	for i, m := range metrics {
 		if i > 0 {
@@ -122,16 +131,24 @@ func (s *PgStorage) BatchSave(ctx context.Context, metrics []models.Metrics) err
 		}
 
 		base := i*4 + 1
-		fmt.Fprintf(&sb, "($%d, $%d, $%d, $%d)", base, base+1, base+2, base+3)
+		sb.WriteString("($")
+		sb.Write(strconv.AppendInt(numBuf[:0], int64(base), 10))
+		sb.WriteString(", $")
+		sb.Write(strconv.AppendInt(numBuf[:0], int64(base+1), 10))
+		sb.WriteString(", $")
+		sb.Write(strconv.AppendInt(numBuf[:0], int64(base+2), 10))
+		sb.WriteString(", $")
+		sb.Write(strconv.AppendInt(numBuf[:0], int64(base+3), 10))
+		sb.WriteString(")")
 		args = append(args, m.ID, m.MType, m.Delta, m.Value)
 	}
 
 	sb.WriteString(` ON CONFLICT (id, type) DO UPDATE SET
         value = CASE
-            WHEN EXCLUDED.type = 'gauge'   THEN EXCLUDED.value
+            WHEN EXCLUDED.type = 'gauge' THEN EXCLUDED.value
             ELSE metrics.value END,
 		delta = CASE 
-			WHEN EXCLUDED.type = 'counter' THEN metrics.delta + EXCLUDED.delta
+			WHEN EXCLUDED.type = 'counter' THEN COALESCE(metrics.delta + EXCLUDED.delta, metrics.delta, EXCLUDED.delta)
 			ELSE metrics.delta
         END`)
 

@@ -2,6 +2,9 @@ package audit
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	"maps"
 	"sync"
 
 	"github.com/mersikovs/korob.git/internal/logger"
@@ -12,9 +15,10 @@ import (
 // audit events from a buffered queue and distribute them to registered Observers.
 type Dispatcher struct {
 	mu         sync.RWMutex
-	observers  map[string]Observer
+	observers  map[string]*observerRunner
 	queue      chan models.AuditEvent
 	maxWorkers int
+	queueSize  int
 	wg         sync.WaitGroup
 	logger     logger.Logger
 	closed     bool
@@ -36,16 +40,16 @@ func NewDispatcher(queueSize int, maxWorkers int, logger logger.Logger) *Dispatc
 	ctx, cancel := context.WithCancel(context.Background())
 
 	d := &Dispatcher{
-		observers:  make(map[string]Observer),
+		observers:  make(map[string]*observerRunner),
 		queue:      make(chan models.AuditEvent, queueSize),
 		maxWorkers: maxWorkers,
+		queueSize:  queueSize,
 		logger:     logger,
 
 		ctx:    ctx,
 		cancel: cancel,
 	}
 
-	d.startWorkerPool()
 	return d
 }
 
@@ -61,40 +65,43 @@ func (d *Dispatcher) startWorkerPool() {
 
 func (d *Dispatcher) processEvent(event models.AuditEvent) {
 	d.mu.RLock()
-	observers := make([]Observer, 0, len(d.observers))
-	for _, obs := range d.observers {
-		observers = append(observers, obs)
-	}
-	d.mu.RUnlock()
+	defer d.mu.RUnlock()
 
-	for _, obs := range observers {
-		func() {
-			defer func() {
-				if r := recover(); r != nil {
-					if d.logger != nil {
-						d.logger.Info("observer panicked", "observer_id", obs.GetID(), "error", r)
-					}
-				}
-			}()
-			obs.Notify(d.ctx, event)
-		}()
+	for _, runner := range d.observers {
+		select {
+		case runner.queue <- event:
+			// OK
+		default:
+			if d.logger != nil {
+				d.logger.Info("observer queue full, event dropped", "observer_id", runner.id)
+			}
+		}
 	}
+}
+
+func (d *Dispatcher) Start() {
+	d.startWorkerPool()
 }
 
 // Register adds an Observer to the dispatcher.
 func (d *Dispatcher) Register(o Observer) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
-	if !d.closed {
-		d.observers[o.GetID()] = o
+
+	if d.closed {
+		return
 	}
+
+	runner := newObserverRunner(o, d.queueSize, d.logger)
+
+	d.observers[o.GetID()] = runner
 }
 
 // Publish sends an audit event to the processing queue.
 func (d *Dispatcher) Publish(event models.AuditEvent) {
 	d.mu.RLock()
+	defer d.mu.RUnlock()
 	isClosed := d.closed
-	d.mu.RUnlock()
 
 	if isClosed {
 		return
@@ -110,14 +117,15 @@ func (d *Dispatcher) Publish(event models.AuditEvent) {
 }
 
 // Shutdown initiates a graceful shutdown of the worker pool.
-func (d *Dispatcher) Shutdown(ctx context.Context) {
+func (d *Dispatcher) Shutdown(ctx context.Context) error {
+	var shutdownErr error
+
 	d.mu.Lock()
 	if d.closed {
 		d.mu.Unlock()
-		return
+		return nil
 	}
 	d.closed = true
-	d.cancel()
 	d.mu.Unlock()
 
 	close(d.queue)
@@ -131,11 +139,44 @@ func (d *Dispatcher) Shutdown(ctx context.Context) {
 	select {
 	case <-done:
 		if d.logger != nil {
-			d.logger.Info("audit worker pool shut down gracefully")
+			d.logger.Info("main worker pool shut down gracefully")
 		}
+
 	case <-ctx.Done():
 		if d.logger != nil {
-			d.logger.Info("audit shutdown timed out or cancelled", "error", ctx.Err())
+			d.logger.Info("main worker pool shutdown timed out", "error", ctx.Err())
+		}
+
+		shutdownErr = fmt.Errorf("worker pool shutdown timed out: %w", ctx.Err())
+	}
+	d.cancel()
+
+	d.mu.RLock()
+	observersToShutdown := maps.Clone(d.observers)
+	d.mu.RUnlock()
+
+	var closeErrs []error
+	for id, runner := range observersToShutdown {
+		if runner == nil || runner.observer == nil {
+			continue
+		}
+
+		if err := runner.Shutdown(); err != nil {
+			closeErrs = append(closeErrs, fmt.Errorf("failed to close observer %q: %w", id, err))
 		}
 	}
+
+	if shutdownErr != nil {
+		closeErrs = append([]error{shutdownErr}, closeErrs...)
+	}
+
+	if len(closeErrs) > 0 {
+		return errors.Join(closeErrs...)
+	}
+
+	if d.logger != nil {
+		d.logger.Info("all observers shut down gracefully")
+	}
+
+	return nil
 }

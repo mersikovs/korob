@@ -10,4 +10,5 @@ import (
 type Observer interface {
 	Notify(ctx context.Context, event models.AuditEvent)
 	GetID() string
+	Close() error
 }

@@ -31,7 +31,7 @@ func NewRemoteObserver(id, targetURL string, log logger.Logger) *RemoteObserver 
 	client.RetryMax = 3
 	client.RetryWaitMin = 500 * time.Millisecond
 	client.RetryWaitMax = 30 * time.Second
-	client.Logger = log
+	client.Logger = nil
 
 	client.CheckRetry = func(_ context.Context, resp *http.Response, err error) (bool, error) {
 		if err != nil {

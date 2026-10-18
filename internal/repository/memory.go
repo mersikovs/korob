@@ -77,21 +77,10 @@ func (s *MemoryStorage) Get(_ context.Context, mType, name string) (models.Metri
 // Save stores a single metric in memory by type and name.
 func (s *MemoryStorage) Save(_ context.Context, m models.Metrics) error {
 	s.mu.Lock()
-
-	if _, ok := s.Metrics[m.MType]; !ok {
-		s.Metrics[m.MType] = make(map[string]models.Metrics)
-	}
-
-	s.Metrics[m.MType][m.ID] = m
+	s.upsertLocked(m)
 	s.mu.Unlock()
-	currentInterval := int(s.storeInterval.Load())
-	if currentInterval == 0 {
-		if err := s.Store(); err != nil {
-			return err
-		}
-	}
 
-	return nil
+	return s.maybeStore()
 }
 
 // BatchSave persists multiple metrics in memory at once.
@@ -99,36 +88,37 @@ func (s *MemoryStorage) BatchSave(_ context.Context, metrics []models.Metrics) e
 	if len(metrics) == 0 {
 		return nil
 	}
+
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	for _, m := range metrics {
-		if _, ok := s.Metrics[m.MType]; !ok {
-			s.Metrics[m.MType] = make(map[string]models.Metrics)
-		}
-		switch m.MType {
-		case models.Counter:
-			var value int64
-			if curValue, ok := s.Metrics[m.MType][m.ID]; ok {
-				if curValue.Delta != nil {
-					value = *curValue.Delta
-					sum := *m.Delta + value
-					m.Delta = &sum
-				}
-			}
+		s.upsertLocked(m)
+	}
+	s.mu.Unlock()
 
-			s.Metrics[m.MType][m.ID] = m
-		default:
-			s.Metrics[m.MType][m.ID] = m
-		}
+	return s.maybeStore()
+}
+
+func (s *MemoryStorage) upsertLocked(m models.Metrics) {
+	byID, ok := s.Metrics[m.MType]
+	if !ok {
+		byID = make(map[string]models.Metrics)
+		s.Metrics[m.MType] = byID
 	}
 
-	currentInterval := int(s.storeInterval.Load())
-	if currentInterval == 0 {
-		if err := s.Store(); err != nil {
-			return err
-		}
+	if prev, found := byID[m.ID]; found &&
+		m.MType == models.Counter &&
+		m.Delta != nil && prev.Delta != nil {
+		sum := *m.Delta + *prev.Delta
+		m.Delta = &sum
 	}
 
+	byID[m.ID] = m
+}
+
+func (s *MemoryStorage) maybeStore() error {
+	if s.storeInterval.Load() == 0 {
+		return s.Store()
+	}
 	return nil
 }
 

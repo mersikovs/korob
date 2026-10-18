@@ -1,3 +1,74 @@
+Текстовое описание анализа работы приложения.
+
+Профили снимались после нагрузки: K6 — 4,25 миллиона запросов за 9,5 минут (примерно 7500 запросов в секунду).
+
+Анализ памяти (inuse_space) показал, что она используется в небольшом количестве и утечек нет: значение возвращается примерно к начальному через некоторое время после нагрузки. 
+
+Поэтому первым направлением для оптимизации выбраны высокие показатели аллокаций: alloc_objects — ~402 млн, alloc_space — ~30,59 ГБ.
+
+Под нагрузкой был выявлен дедлок на обновление метрик в базе: запросы стартовали параллельно, а список метрик был не отсортирован — исправлено.
+
+GetNamesList При выводе всех метрик pgx.CollectRows заменён на цикл for rows.Next(); процент от alloc_objects перешёл в alloc_space.
+Предвыделение памяти для списка метрик (256) снизило аллокации на пару процентов.
+
+ListMetrics Переход с fmt.Sprintf + strings.Join на html/template оказался неудачным — стало хуже. Решил применять html/template используется более активно, применять его для одного метода нецелесообразно — убрал.
+ListMetrics Метод вывода списка переведён на strings.Builder с предвыделением буфера — это показало снижение аллокаций.
+Далее был установлен кэш на этот метод — скорее не как оптимизация кода, а чтобы понять, вылетит ли он полностью из отчёта. С первых мест отчёта данный метод ушёл; кэш оставлен.
+
+Введён recorderPool (sync.Pool) для middleware Logger — аллокации объектов снизились.
+
+Заменены написанные мной middleware сжатия на сжатие, поддерживаемое фреймворком chi, — количество аллокаций ещё уменьшилось.
+
+В SignResponseMiddleware тоже введён sync.Pool — с положительным результатом.
+
+Результаты
+По итогу общее количество аллокаций снизилось примерно на 30%.
+
+Немного увеличилось использование памяти (inuse_space) — примерно на 5 МБ. Это связано с кэшем и sync.Pool, которые теперь находятся в памяти.
+
+Лучшей оптимизацией стало не использование собственного велосипеда при сжатии. p95 даже немного вырос(плохо и не понятно), RPS  остался на начальном уровне
+
+Benchmark
+
+korob\internal\repository\dbpg.go Get
+Стартовые значения
+BenchmarkPgStorageGet/ExistingMetric-32                 4935        229087 ns/op         751 B/op         14 allocs/op
+BenchmarkPgStorageGet/NonExistingMetric-32              5220        234977 ns/op         701 B/op         13 allocs/op
+
+Подрубил config.ConnConfig.DefaultQueryExecMode = pgx.QueryExecModeCacheStatement
+BenchmarkPgStorageGet/ExistingMetric-32                 4436        232255 ns/op         751 B/op         14 allocs/op
+BenchmarkPgStorageGet/NonExistingMetric-32              5265        226469 ns/op         702 B/op         13 allocs/op
+
+Есть небольшой положительный эффект от включения кэширования операторов
+
+korob\internal\repository\dbpg.go Save
+Стартовые значения
+BenchmarkPgStorageSave/InsertNewCounter-32              4876        252480 ns/op         243 B/op          8 allocs/op
+BenchmarkPgStorageSave/InsertNewGauge-32                3788        274513 ns/op         243 B/op          8 allocs/op
+BenchmarkPgStorageSave/UpdateExistingCounter-32         4405        271340 ns/op         225 B/op          7 allocs/op
+BenchmarkPgStorageSave/UpdateExistingGauge-32           4449        267442 ns/op         226 B/op          7 allocs/op
+
+Просчет значение перенесен в запрос
+BenchmarkPgStorageSave/InsertNewCounter-32         	    4173	    265152 ns/op	     244 B/op	       8 allocs/op
+BenchmarkPgStorageSave/InsertNewGauge-32           	    4420	    260272 ns/op	     242 B/op	       8 allocs/op
+BenchmarkPgStorageSave/UpdateExistingCounter-32    	    4665	    264450 ns/op	     226 B/op	       7 allocs/op
+BenchmarkPgStorageSave/UpdateExistingGauge-32      	    4808	    277856 ns/op	     225 B/op	       7 allocs/op
+
+Изменения в рамках погрешностей, можем сделать вывод что изменение логики работы не ухудшило производительность
+
+korob\internal\repository\dbpg.go BatchSave
+Стартовые значения
+BenchmarkPgStorageBatchSave/BatchSize10_Insert-32               2872        423589 ns/op        3450 B/op         69 allocs/op
+BenchmarkPgStorageBatchSave/BatchSize100_Insert-32               738       1679272 ns/op       76435 B/op        777 allocs/op
+BenchmarkPgStorageBatchSave/BatchSize10_Update-32               2935        374913 ns/op        3360 B/op         59 allocs/op
+
+Оптимизации сборки запроса
+BenchmarkPgStorageBatchSave/BatchSize10_Insert-32         	    2834	    411117 ns/op	    2508 B/op	      64 allocs/op
+BenchmarkPgStorageBatchSave/BatchSize100_Insert-32        	     769	   1747211 ns/op	   69701 B/op	     623 allocs/op
+BenchmarkPgStorageBatchSave/BatchSize10_Update-32         	    2674	    417041 ns/op	    2423 B/op	      55 allocs/op
+Есть улучшения по памяти и уменьшились алокации
+
+
 go tool pprof -top -diff_base=profiles/base.pprof -alloc_objects profiles/result.pprof
 File: main
 Build ID: 4fc71448bf5b904075b7d7b9df3fe4a1e28fdc5e

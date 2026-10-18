@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -22,6 +23,8 @@ func NewPool(ctx context.Context, dsn string) (*pgxpool.Pool, error) {
 	config.MinConns = 2                       // минимум 2 всегда активны
 	config.MaxConnLifetime = 30 * time.Minute // соединение живёт 30 минут
 	config.MaxConnIdleTime = 5 * time.Minute  // простоит 5 мин – закрывается
+
+	config.ConnConfig.DefaultQueryExecMode = pgx.QueryExecModeCacheStatement
 
 	pool, err := pgxpool.NewWithConfig(ctx, config)
 	if err != nil {

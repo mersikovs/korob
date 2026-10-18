@@ -3,12 +3,13 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"sort"
 	"strconv"
 
-	"github.com/mersikovs/korob.git/internal/audit"
+	"github.com/jackc/pgx/v5"
 	"github.com/mersikovs/korob.git/internal/cache"
 	"github.com/mersikovs/korob.git/internal/logger"
 	models "github.com/mersikovs/korob.git/internal/model"
@@ -22,21 +23,17 @@ type Pinger interface {
 
 // MetricService orchestrates metric operations with storage, caching, and audit publishing.
 type MetricService struct {
-	cache cache.MetricsCache
-	// Publisher dispatches audit events for metric changes.
-	Publisher *audit.Dispatcher
-	repo      repository.Storage
-	// Logger records service operations and errors.
-	Logger logger.Logger
+	cache  cache.MetricsCache
+	repo   repository.Storage
+	logger logger.Logger
 }
 
 // NewMetricService creates a MetricService wiring storage, audit dispatcher, cache, and logger.
-func NewMetricService(repo repository.Storage, dispatcher *audit.Dispatcher, cache cache.MetricsCache, log logger.Logger) *MetricService {
+func NewMetricService(repo repository.Storage, cache cache.MetricsCache, log logger.Logger) *MetricService {
 	return &MetricService{
-		cache:     cache,
-		Publisher: dispatcher,
-		repo:      repo,
-		Logger:    log,
+		cache:  cache,
+		repo:   repo,
+		logger: log,
 	}
 }
 
@@ -44,6 +41,9 @@ func NewMetricService(repo repository.Storage, dispatcher *audit.Dispatcher, cac
 func (m *MetricService) GetMetric(ctx context.Context, metricType, metricName string) (string, error) {
 	metric, err := m.repo.Get(ctx, metricType, metricName)
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", fmt.Errorf("метрика %s не найдена: %w", metricName, err)
+		}
 		return "", fmt.Errorf("неизвестная метрика %s", metricName)
 	}
 
@@ -73,15 +73,6 @@ func (m *MetricService) UpdateMetric(ctx context.Context, metricType, metricName
 		counter, err := strconv.ParseInt(metricValue, 10, 64)
 		if err != nil {
 			return fmt.Errorf("ошибка при обновлении метрики %s: %v", metricName, err)
-		}
-
-		metric, err := m.repo.Get(ctx, metricType, metricName)
-		if err != nil {
-			return fmt.Errorf("ошибка при получении метрики %s: %v", metricName, err)
-		}
-
-		if metric.Delta != nil {
-			counter += *metric.Delta
 		}
 
 		err = m.repo.Save(ctx, models.Metrics{
@@ -142,20 +133,13 @@ func (m *MetricService) UpdateMetricFromStruct(ctx context.Context, metricType, 
 			return fmt.Errorf("ошибка при обновлении метрики %s", metricName)
 		}
 
-		metric, err := m.repo.Get(ctx, metricType, metricName)
-		if err != nil {
-			return fmt.Errorf("ошибка при получении метрики %s: %v", metricName, err)
-		}
-
 		var counter int64
-		if metric.Delta != nil {
-			counter = counter + *metric.Delta
-		}
+
 		if metricValue.Delta != nil {
-			counter = counter + *metricValue.Delta
+			counter = *metricValue.Delta
 		}
 
-		err = m.repo.Save(ctx, models.Metrics{
+		err := m.repo.Save(ctx, models.Metrics{
 			ID:    metricName,
 			MType: metricType,
 			Delta: &counter,
@@ -196,7 +180,7 @@ func (m *MetricService) UpdateMetricsFromStruct(ctx context.Context, metrics []m
 		case models.Counter:
 
 			if metric.Delta == nil {
-				m.Logger.Info("не валидная метрика %s", metric.ID)
+				m.logger.Info("не валидная метрика %s", metric.ID)
 				continue
 			}
 
@@ -206,7 +190,7 @@ func (m *MetricService) UpdateMetricsFromStruct(ctx context.Context, metrics []m
 				continue
 			}
 			if metric.Value == nil {
-				m.Logger.Info("не валидная метрика %s", metric.ID)
+				m.logger.Info("не валидная метрика %s", metric.ID)
 				continue
 			}
 			metricsForSave = append(metricsForSave, metric)

@@ -2,31 +2,9 @@ package signing_test
 
 import (
 	"fmt"
-	"testing"
 
 	"github.com/mersikovs/korob.git/internal/signing"
 )
-
-func TestCalcHash(t *testing.T) {
-	tests := []struct {
-		name string // description of this test case
-		// Named input parameters for target function.
-		data []byte
-		key  []byte
-		want string
-	}{
-		// TODO: Add test cases.
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := signing.CalcHash(tt.data, tt.key)
-			// TODO: update the condition below to compare got with tt.want.
-			if true {
-				t.Errorf("CalcHash() = %v, want %v", got, tt.want)
-			}
-		})
-	}
-}
 
 // ExampleCalcHash demonstrates how to compute an HMAC-SHA256 hash
 // of a message using a secret key.

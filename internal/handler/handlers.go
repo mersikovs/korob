@@ -12,6 +12,8 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/mersikovs/korob.git/internal/audit"
+	"github.com/mersikovs/korob.git/internal/logger"
 	models "github.com/mersikovs/korob.git/internal/model"
 	"github.com/mersikovs/korob.git/internal/service"
 )
@@ -20,11 +22,13 @@ import (
 // delegating business logic to the MetricService.
 type MetricHandler struct {
 	metricService *service.MetricService
+	publisher     *audit.Dispatcher
+	logger        logger.Logger
 }
 
 // NewMetricHandler creates a MetricHandler with the provided MetricService dependency.
-func NewMetricHandler(metricService *service.MetricService) *MetricHandler {
-	return &MetricHandler{metricService: metricService}
+func NewMetricHandler(metricService *service.MetricService, dispatcher *audit.Dispatcher, log logger.Logger) *MetricHandler {
+	return &MetricHandler{metricService: metricService, publisher: dispatcher, logger: log}
 }
 
 // PingDB is an HTTP handler that checks the database connectivity.
@@ -48,7 +52,7 @@ func (h *MetricHandler) PingDB(w http.ResponseWriter, r *http.Request) {
 func (h *MetricHandler) ListMetrics(w http.ResponseWriter, r *http.Request) {
 	metricsNames, err := h.metricService.ListMetrics(r.Context())
 	if err != nil {
-		h.metricService.Logger.Info("ошибка получения метрик:", "error", err)
+		h.logger.Info("ошибка получения метрик:", "error", err)
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
@@ -88,7 +92,7 @@ func (h *MetricHandler) ListMetrics(w http.ResponseWriter, r *http.Request) {
 </html>`)
 
 	if _, err := io.WriteString(w, sb.String()); err != nil {
-		h.metricService.Logger.Info("ошибка записи ответа: ", "error", err)
+		h.logger.Info("ошибка записи ответа: ", "error", err)
 	}
 
 }
@@ -117,7 +121,7 @@ func (h *MetricHandler) GetMetricFromPath(w http.ResponseWriter, r *http.Request
 	w.WriteHeader(http.StatusOK)
 	_, err := w.Write([]byte(value))
 	if err != nil {
-		h.metricService.Logger.Info("ошибка записи ответа: %v", err)
+		h.logger.Info("ошибка записи ответа: %v", err)
 	}
 }
 
@@ -183,7 +187,7 @@ func (h *MetricHandler) FetchMetricFromBody(w http.ResponseWriter, r *http.Reque
 	w.WriteHeader(http.StatusOK)
 	err := json.NewEncoder(w).Encode(response)
 	if err != nil {
-		h.metricService.Logger.Info("ошибка записи ответа: %v", err)
+		h.logger.Info("ошибка записи ответа: %v", err)
 	}
 }
 
@@ -210,6 +214,14 @@ func (h *MetricHandler) UpdateMetricFromPath(w http.ResponseWriter, r *http.Requ
 
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
+
+	if h.publisher != nil {
+		h.publisher.Publish(models.AuditEvent{
+			TS:        time.Now().Unix(),
+			Metrics:   []string{metricName},
+			IPAddress: extractIP(r),
+		})
+	}
 }
 
 // UpdateMetricFromBody updates a single metric based on a JSON payload in the request body.
@@ -229,7 +241,7 @@ func (h *MetricHandler) UpdateMetricFromBody(w http.ResponseWriter, r *http.Requ
 	decoder.DisallowUnknownFields()
 
 	if err := decoder.Decode(&req); err != nil {
-		h.metricService.Logger.Info(err.Error())
+		h.logger.Info(err.Error())
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
@@ -241,7 +253,7 @@ func (h *MetricHandler) UpdateMetricFromBody(w http.ResponseWriter, r *http.Requ
 
 	serviceErr := h.metricService.UpdateMetricFromStruct(r.Context(), req.MType, req.ID, req)
 	if serviceErr != nil {
-		h.metricService.Logger.Info(serviceErr.Error())
+		h.logger.Info(serviceErr.Error())
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
@@ -249,8 +261,8 @@ func (h *MetricHandler) UpdateMetricFromBody(w http.ResponseWriter, r *http.Requ
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
 
-	if h.metricService.Publisher != nil {
-		h.metricService.Publisher.Publish(models.AuditEvent{
+	if h.publisher != nil {
+		h.publisher.Publish(models.AuditEvent{
 			TS:        time.Now().Unix(),
 			Metrics:   []string{req.ID},
 			IPAddress: extractIP(r),
@@ -275,7 +287,7 @@ func (h *MetricHandler) BatchUpdateMetricsFromBody(w http.ResponseWriter, r *htt
 	decoder.DisallowUnknownFields()
 
 	if err := decoder.Decode(&req); err != nil {
-		h.metricService.Logger.Info(err.Error())
+		h.logger.Info(err.Error())
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
@@ -296,7 +308,7 @@ func (h *MetricHandler) BatchUpdateMetricsFromBody(w http.ResponseWriter, r *htt
 
 	serviceErr := h.metricService.UpdateMetricsFromStruct(r.Context(), validReq)
 	if serviceErr != nil {
-		h.metricService.Logger.Info(serviceErr.Error())
+		h.logger.Info(serviceErr.Error())
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}
@@ -304,8 +316,8 @@ func (h *MetricHandler) BatchUpdateMetricsFromBody(w http.ResponseWriter, r *htt
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
 
-	if h.metricService.Publisher != nil {
-		h.metricService.Publisher.Publish(models.AuditEvent{
+	if h.publisher != nil {
+		h.publisher.Publish(models.AuditEvent{
 			TS:        time.Now().Unix(),
 			Metrics:   metricIDs,
 			IPAddress: extractIP(r),
