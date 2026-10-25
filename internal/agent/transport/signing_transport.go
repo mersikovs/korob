@@ -9,11 +9,16 @@ import (
 	"github.com/mersikovs/korob.git/internal/signing"
 )
 
+// SigningTransport is an http.RoundTripper wrapper that automatically
+// signs outgoing HTTP requests
 type SigningTransport struct {
 	Base http.RoundTripper
 	Key  []byte
 }
 
+// RoundTrip implements the http.RoundTripper interface. It calculates
+// the request signature, attaches it to the headers, and safely restores
+// the request body for the underlying transport to read.
 func (t *SigningTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	if t.Key == nil {
 		return t.Base.RoundTrip(req)

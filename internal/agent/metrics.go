@@ -14,11 +14,13 @@ import (
 	models "github.com/mersikovs/korob.git/internal/model"
 )
 
+// Sender defines the contract for executing HTTP requests.
 type Sender interface {
 	Do(req *http.Request) (*http.Response, error)
 }
 
-// AI генерация кода DirectMapping:
+// DirectMapping преобразует стандартные пути метрик из пакета runtime/metrics
+// во внутренние имена метрик, ожидаемые приложением.
 var DirectMapping = map[string]string{
 	"/gc/heap/allocs:bytes":                       "TotalAlloc",
 	"/gc/heap/allocs:objects":                     "Mallocs",
@@ -34,6 +36,7 @@ var DirectMapping = map[string]string{
 	"/memory/classes/other:bytes":                 "OtherSys",
 }
 
+// GetRuntimeMetrics collects and formats Go runtime statistics
 func GetRuntimeMetrics() map[string]models.Metrics {
 	result := make(map[string]models.Metrics)
 	descriptions := metrics.All()
@@ -116,6 +119,7 @@ func GetRuntimeMetrics() map[string]models.Metrics {
 	return result
 }
 
+// Float64Ptr returns a pointer to the given float64 value
 func Float64Ptr(v float64) *float64 {
 	return &v
 }
@@ -140,6 +144,8 @@ func int64PtrEqual(a, b *int64) bool {
 	return *a == *b
 }
 
+// PostMetrics old version sends metric
+// Deprecated: Use PostMetricsBatch instead.
 func PostMetrics(baseURL string, metrics map[string]string, metricType string) error {
 	var errs []error
 	for k, v := range metrics {
@@ -168,6 +174,8 @@ func PostMetrics(baseURL string, metrics map[string]string, metricType string) e
 	return nil
 }
 
+// PostMetricsJSON old version sends metric
+// Deprecated: Use PostMetricsBatch instead.
 func PostMetricsJSON(baseURL string, metrics map[string]models.Metrics) error {
 	var errs []error
 	for _, v := range metrics {
@@ -222,6 +230,7 @@ func PostMetricsJSON(baseURL string, metrics map[string]models.Metrics) error {
 	return nil
 }
 
+// PostMetricsBatch serializes a map of metrics into a JSON array and sends it
 func PostMetricsBatch(sender Sender, baseURL string, metrics map[string]models.Metrics) error {
 	metricsSlice := make([]models.Metrics, 0)
 	for _, v := range metrics {

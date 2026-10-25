@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -18,11 +19,14 @@ import (
 	"github.com/jackc/pgerrcode"
 )
 
+// PgStorage is a PostgreSQL-backed implementation of Storage.
 type PgStorage struct {
 	pool   *pgxpool.Pool
 	logger logger.Logger
 }
 
+// NewPgStorage connects to PostgreSQL using the provided DSN
+// and returns a Storage implementation.
 func NewPgStorage(ctx context.Context, dsn string, l logger.Logger) (*PgStorage, error) {
 	curPool, err := db.NewPool(ctx, dsn)
 	if err != nil {
@@ -31,6 +35,7 @@ func NewPgStorage(ctx context.Context, dsn string, l logger.Logger) (*PgStorage,
 	return &PgStorage{pool: curPool, logger: l}, nil
 }
 
+// GetNamesList returns all metric names from PostgreSQL.
 func (s *PgStorage) GetNamesList(ctx context.Context) ([]string, error) {
 	query := `SELECT id FROM metrics`
 	rows, err := s.pool.Query(ctx, query)
@@ -39,22 +44,23 @@ func (s *PgStorage) GetNamesList(ctx context.Context) ([]string, error) {
 	}
 	defer rows.Close()
 
-	metrics, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (string, error) {
+	metrics := make([]string, 0, 256)
+	for rows.Next() {
 		var id string
-
-		if err := row.Scan(&id); err != nil {
-			return "", fmt.Errorf("scan row: %w", err)
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("scan row: %w", err)
 		}
+		metrics = append(metrics, id)
+	}
 
-		return id, nil
-	})
-	if err != nil {
-		return nil, err
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate rows: %w", err)
 	}
 
 	return metrics, nil
 }
 
+// Get retrieves a single metric from PostgreSQL by type and name.
 func (s *PgStorage) Get(ctx context.Context, mType, name string) (models.Metrics, error) {
 	query := `SELECT id, type, delta, value  FROM metrics WHERE id = $1 AND type  = $2`
 
@@ -66,7 +72,7 @@ func (s *PgStorage) Get(ctx context.Context, mType, name string) (models.Metrics
 	err := row.Scan(&m.ID, &m.MType, &delta, &value)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return models.Metrics{}, nil
+			return models.Metrics{}, fmt.Errorf("metric not found: %w", err)
 		}
 		return models.Metrics{}, fmt.Errorf("scan metric: %w", err)
 	}
@@ -83,14 +89,20 @@ func (s *PgStorage) Get(ctx context.Context, mType, name string) (models.Metrics
 	return m, nil
 }
 
-func (s *PgStorage) Save(ctx context.Context, mType, name string, m models.Metrics) error {
+// Save stores a single metric to PostgreSQL by type and name.
+func (s *PgStorage) Save(ctx context.Context, m models.Metrics) error {
 	query := `
         INSERT INTO metrics (id, type, delta, value)
         VALUES ($1, $2, $3, $4)
         ON CONFLICT (id, type) DO UPDATE
         SET 
-            delta = EXCLUDED.delta,
-            value = EXCLUDED.value`
+           value = CASE
+            WHEN EXCLUDED.type = 'gauge' THEN EXCLUDED.value
+            ELSE metrics.value END,
+		delta = CASE 
+			WHEN EXCLUDED.type = 'counter' THEN COALESCE(metrics.delta + EXCLUDED.delta, metrics.delta, EXCLUDED.delta)
+			ELSE metrics.delta
+        END`
 
 	_, err := s.pool.Exec(ctx, query, m.ID, m.MType, m.Delta, m.Value)
 	if err != nil {
@@ -100,14 +112,18 @@ func (s *PgStorage) Save(ctx context.Context, mType, name string, m models.Metri
 	return nil
 }
 
+// BatchSave persists multiple metrics to PostgreSQL.
 func (s *PgStorage) BatchSave(ctx context.Context, metrics []models.Metrics) error {
 	if len(metrics) == 0 {
 		return nil
 	}
 
 	var sb strings.Builder
+	sb.Grow(len(metrics) * 30)
+
 	sb.WriteString("INSERT INTO metrics (id, type, delta, value) VALUES ")
 
+	var numBuf [20]byte
 	args := make([]any, 0, len(metrics)*4)
 	for i, m := range metrics {
 		if i > 0 {
@@ -115,16 +131,24 @@ func (s *PgStorage) BatchSave(ctx context.Context, metrics []models.Metrics) err
 		}
 
 		base := i*4 + 1
-		fmt.Fprintf(&sb, "($%d, $%d, $%d, $%d)", base, base+1, base+2, base+3)
+		sb.WriteString("($")
+		sb.Write(strconv.AppendInt(numBuf[:0], int64(base), 10))
+		sb.WriteString(", $")
+		sb.Write(strconv.AppendInt(numBuf[:0], int64(base+1), 10))
+		sb.WriteString(", $")
+		sb.Write(strconv.AppendInt(numBuf[:0], int64(base+2), 10))
+		sb.WriteString(", $")
+		sb.Write(strconv.AppendInt(numBuf[:0], int64(base+3), 10))
+		sb.WriteString(")")
 		args = append(args, m.ID, m.MType, m.Delta, m.Value)
 	}
 
 	sb.WriteString(` ON CONFLICT (id, type) DO UPDATE SET
         value = CASE
-            WHEN EXCLUDED.type = 'gauge'   THEN EXCLUDED.value
+            WHEN EXCLUDED.type = 'gauge' THEN EXCLUDED.value
             ELSE metrics.value END,
 		delta = CASE 
-			WHEN EXCLUDED.type = 'counter' THEN metrics.delta + EXCLUDED.delta
+			WHEN EXCLUDED.type = 'counter' THEN COALESCE(metrics.delta + EXCLUDED.delta, metrics.delta, EXCLUDED.delta)
 			ELSE metrics.delta
         END`)
 
@@ -146,6 +170,7 @@ func (s *PgStorage) BatchSave(ctx context.Context, metrics []models.Metrics) err
 	return lastError
 }
 
+// Ping checks the connection to the PostgreSQL database.
 func (s *PgStorage) Ping(ctx context.Context) error {
 	return s.pool.Ping(ctx)
 }
@@ -171,6 +196,7 @@ func isPreExecutionError(err error) bool {
 	return false
 }
 
+// Close gracefully shuts down
 func (s *PgStorage) Close() error {
 	if s.pool == nil {
 		return nil

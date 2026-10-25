@@ -1,3 +1,4 @@
+// Package main is the entry point for the metrics server application.
 package main
 
 import (
@@ -7,7 +8,12 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
+	"github.com/mersikovs/korob.git/internal/audit"
+	"github.com/mersikovs/korob.git/internal/cache"
 	"github.com/mersikovs/korob.git/internal/config"
 	"github.com/mersikovs/korob.git/internal/database"
 	"github.com/mersikovs/korob.git/internal/logger"
@@ -20,42 +26,98 @@ func main() {
 	fs := flag.NewFlagSet("server", flag.ContinueOnError)
 	cnf, err := config.ServerParseConfig(fs, os.Args[1:], config.OSenv{})
 	if err != nil {
-		fmt.Println("Ошибка парсинга параметров ", err)
-		os.Exit(1)
+		fmt.Fprintln(os.Stderr, "Failed to parse command-line and environment parameters:", err)
+		os.Exit(2)
 	}
 
 	logger, err := logger.NewZap("info")
 	if err != nil {
-		fmt.Println("Ошибка создания логгера")
+		fmt.Fprintln(os.Stderr, "Failed to create logger:", err)
 		os.Exit(1)
 	}
 
+	appCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
 	if cnf.DatabaseDSN != "" {
 		if err := database.MigrateUp(cnf.DatabaseDSN, "file://migrations"); err != nil {
-			logger.Fatal("Ошибка миграции базы данных:", err)
+			logger.Fatal("Database migration failed", "error", err)
 		}
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
-
-	storage, err := repository.NewStorage(ctx, cnf, logger)
+	storage, err := repository.NewStorage(appCtx, cnf, logger)
 	if err != nil {
-		logger.Fatal("Ошибка создания объекта хранилища:", err)
+		logger.Fatal("Failed to initialize storage", "error", err)
 	}
-	service := service.NewMetricService(storage, logger)
-	router := router.NewRouter(service, cnf.Key)
 
-	err = http.ListenAndServe(cnf.Address, router)
-	if err != nil {
-		logger.Fatal("Ошибка запуска сервера:", err)
+	var dispatcher *audit.Dispatcher
+	if cnf.AuditFile != "" || cnf.AuditURL != "" {
+		dispatcher = audit.NewDispatcher(500, 8, logger)
+
+		if cnf.AuditFile != "" {
+			fileObs, err := audit.NewFileObserver(cnf.AuditFile, cnf.AuditFile, logger)
+			if err != nil {
+				logger.Fatal("File audit failed", "error", err)
+			}
+			dispatcher.Register(fileObs)
+		}
+
+		if cnf.AuditURL != "" {
+			remoteObs := audit.NewRemoteObserver(
+				cnf.AuditURL,
+				cnf.AuditURL,
+				logger,
+			)
+			dispatcher.Register(remoteObs)
+		}
+
+		dispatcher.Start()
+	}
+
+	cacher := cache.NewNoopCache()
+	if cnf.CacheTTLSec > 0 {
+		cacher = cache.NewGoCache(time.Duration(cnf.CacheTTLSec*int(time.Second)), 2*time.Duration(cnf.CacheTTLSec*int(time.Second)))
+	}
+
+	service := service.NewMetricService(storage, cacher, logger)
+	router := router.NewRouter(service, dispatcher, logger, cnf.Key)
+
+	srv := &http.Server{
+		Addr:    cnf.Address,
+		Handler: router,
+	}
+
+	go func() {
+		err = srv.ListenAndServe()
+		if err != nil && err != http.ErrServerClosed {
+			logger.Fatal("The web server failed to start", "error", err)
+		}
+	}()
+
+	<-appCtx.Done()
+	logger.Info("Graceful shutdown...")
+
+	httpShutdownCtx, httpCancel := context.WithTimeout(context.Background(), 30*time.Second)
+	if err := srv.Shutdown(httpShutdownCtx); err != nil {
+		logger.Info("Graceful shutdown of HTTP server failed", "error", err)
+	}
+	httpCancel()
+
+	if dispatcher != nil {
+		dispatcherCtx, dispatcherCancel := context.WithTimeout(context.Background(), 30*time.Second)
+		if err := dispatcher.Shutdown(dispatcherCtx); err != nil {
+			logger.Info("dispatcher shutdown completed with errors", "error", err)
+		}
+		logger.Info("dispatcher shut down successfully")
+		dispatcherCancel()
 	}
 
 	if closer, ok := storage.(io.Closer); ok {
 		defer func() {
 			if err := closer.Close(); err != nil {
-				logger.Info("Ошибка закрытия хранилища %v", err)
+				logger.Info("Failed to close storage", "error", err)
 			}
 		}()
 	}
-	cancel()
+
 }

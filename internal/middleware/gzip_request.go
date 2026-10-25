@@ -31,6 +31,8 @@ func (c *compressReader) Close() error {
 	return c.zr.Close()
 }
 
+// GzipRequestMiddleware decompresses gzip-encoded request bodies before passing
+// them to the next handler.
 func GzipRequestMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		contentEncoding := r.Header.Get("Content-Encoding")

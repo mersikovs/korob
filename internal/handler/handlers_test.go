@@ -6,11 +6,13 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/mersikovs/korob.git/internal/cache"
 	"github.com/mersikovs/korob.git/internal/logger"
 	models "github.com/mersikovs/korob.git/internal/model"
 	"github.com/mersikovs/korob.git/internal/repository"
 	"github.com/mersikovs/korob.git/internal/router"
 	"github.com/mersikovs/korob.git/internal/service"
+
 	"github.com/stretchr/testify/assert"
 )
 
@@ -25,9 +27,9 @@ func TestUpdateMetric(t *testing.T) {
 		t.Fatalf("failed to create pg logger: %v", err)
 	}
 	modelStorage, _ := repository.NewStorage(ctx, &cnf, logger)
-
-	service := service.NewMetricService(modelStorage, logger)
-	router := router.NewRouter(service, nil)
+	noopCache := cache.NewNoopCache()
+	service := service.NewMetricService(modelStorage, noopCache, logger)
+	router := router.NewRouter(service, nil, logger, nil)
 
 	type want struct {
 		code        int

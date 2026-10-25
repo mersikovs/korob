@@ -13,6 +13,8 @@ const defaultPollInterval = 2
 const defaultKey = ""
 const defaultRateLimit = 1
 
+// Config holds the client agent configuration, including server address,
+// sign key, and operational intervals.
 type Config struct {
 	Address        string
 	Key            []byte
@@ -21,12 +23,17 @@ type Config struct {
 	RateLimit      int
 }
 
+// EnvSource abstracts environment variable access, allowing for testable
+// configuration parsing without direct OS dependencies.
 type EnvSource interface {
 	LookupEnv(key string) (string, bool)
 }
 
+// OSenv is a production implementation of EnvSource that reads
+// environment variables directly from the operating system.
 type OSenv struct{}
 
+// LookupEnv retrieves the value of the environment variable named by the key.
 func (e OSenv) LookupEnv(key string) (string, bool) {
 	return os.LookupEnv(key)
 }
@@ -57,6 +64,9 @@ func getPositiveIntEnv(key, value string) (int, error) {
 	return v, nil
 }
 
+// Parse builds a Config by merging command-line flags and environment variables,
+// with environment variables taking precedence. It also validates that interval
+// and rate limit values are positive integers.
 func Parse(fs *flag.FlagSet, args []string, env EnvSource) (*Config, error) {
 	cnf := &Config{}
 	key := ""
