@@ -18,6 +18,14 @@ import (
 )
 
 func main() {
+	if err := run(context.Background()); err != nil {
+		fmt.Fprintln(os.Stderr, "Agent failed:", err)
+		//nolint:exitinmain // все defer выполнились в run, игнорируем
+		os.Exit(1)
+	}
+}
+
+func run(ctx context.Context) error {
 	delays := []time.Duration{
 		1 * time.Second,
 		3 * time.Second,
@@ -26,14 +34,12 @@ func main() {
 	fs := flag.NewFlagSet("agent", flag.ContinueOnError)
 	cnf, err := config.Parse(fs, os.Args[1:], config.OSenv{})
 	if err != nil {
-		fmt.Println("Ошибка парсинга параметров ", err)
-		return
+		return fmt.Errorf("failed to parse command-line and environment parameters: %w", err)
 	}
 
 	logger, err := logger.NewZap("info")
 	if err != nil {
-		fmt.Println("Ошибка создания логгера")
-		os.Exit(1)
+		return fmt.Errorf("Failed to create logger: %w", err)
 	}
 
 	compression := transport.NewCompressTransport(
@@ -70,4 +76,6 @@ func main() {
 	cancel()
 	<-done
 	logger.Info("Завершено")
+
+	return nil
 }

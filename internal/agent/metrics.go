@@ -2,7 +2,6 @@ package agent
 
 import (
 	"bytes"
-	"compress/gzip"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -144,132 +143,46 @@ func int64PtrEqual(a, b *int64) bool {
 	return *a == *b
 }
 
-// PostMetrics old version sends metric
-// Deprecated: Use PostMetricsBatch instead.
-func PostMetrics(baseURL string, metrics map[string]string, metricType string) error {
-	var errs []error
-	for k, v := range metrics {
-		url := fmt.Sprintf("%s/%s/%s/%s", baseURL, metricType, k, v)
-		resp, err := http.Post(url, "text/plain", nil)
-		if err != nil {
-			errs = append(errs, fmt.Errorf("ошибка отправки метрики %s: %v", k, err))
-			time.Sleep(time.Duration(10) * time.Millisecond)
-			continue
-		}
-		if resp.StatusCode != 200 {
-			errs = append(errs, fmt.Errorf("ошибка отправки метрики %s: %v", k, resp.Status))
-		}
-		if resp.Body != nil {
-			err := resp.Body.Close()
-			if err != nil {
-				errs = append(errs, fmt.Errorf("ошибка закрытия тела ответа для метрики %s: %v", k, err))
-			}
-		}
-		time.Sleep(time.Duration(10) * time.Millisecond)
-	}
-
-	if len(errs) > 0 {
-		return fmt.Errorf("ошибки отправки метрик: %v", errs)
-	}
-	return nil
-}
-
-// PostMetricsJSON old version sends metric
-// Deprecated: Use PostMetricsBatch instead.
-func PostMetricsJSON(baseURL string, metrics map[string]models.Metrics) error {
-	var errs []error
-	for _, v := range metrics {
-		jsonData, err := json.Marshal(v)
-		if err != nil {
-			errs = append(errs, fmt.Errorf("ошибка создания json %s: %v", v.ID, err))
-			time.Sleep(time.Duration(10) * time.Millisecond)
-			continue
-		}
-
-		var buf bytes.Buffer
-		gz := gzip.NewWriter(&buf)
-		if _, err = gz.Write(jsonData); err != nil {
-			return fmt.Errorf("ошибка записи gzip: %w", err)
-		}
-
-		if err = gz.Close(); err != nil {
-			return fmt.Errorf("ошибка закрытия gz: %w", err)
-		}
-
-		req, err := http.NewRequest("POST", baseURL, &buf)
-		if err != nil {
-			return fmt.Errorf("ошибка создания запроса: %w", err)
-		}
-
-		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("Content-Encoding", "gzip")
-		req.Header.Set("Accept-Encoding", "gzip")
-
-		resp, err := http.DefaultClient.Do(req)
-		if err != nil {
-			errs = append(errs, fmt.Errorf("ошибка отправки метрики %s: %v", v.ID, err))
-			time.Sleep(time.Duration(10) * time.Millisecond)
-			continue
-		}
-		if resp.StatusCode != 200 {
-			errs = append(errs, fmt.Errorf("ошибка отправки метрики %s: %v", v.ID, resp.Status))
-		}
-		if resp.Body != nil {
-			err := resp.Body.Close()
-			if err != nil {
-				errs = append(errs, fmt.Errorf("ошибка закрытия тела ответа для метрики %s: %v", v.ID, err))
-			}
-		}
-
-		time.Sleep(time.Duration(10) * time.Millisecond)
-	}
-
-	if len(errs) > 0 {
-		return fmt.Errorf("ошибки отправки метрик: %v", errs)
-	}
-	return nil
-}
-
 // PostMetricsBatch serializes a map of metrics into a JSON array and sends it
 func PostMetricsBatch(sender Sender, baseURL string, metrics map[string]models.Metrics) error {
+	var err error
+
 	metricsSlice := make([]models.Metrics, 0)
 	for _, v := range metrics {
 		metricsSlice = append(metricsSlice, v)
 	}
 
-	jsonData, err := json.Marshal(metricsSlice)
-
-	if err != nil {
-		return fmt.Errorf("ошибка создания json: %v", err)
+	var jsonData []byte
+	if jsonData, err = json.Marshal(metricsSlice); err != nil {
+		return fmt.Errorf("create json error: %w", err)
 	}
-
-	var resp *http.Response
 
 	buf := bytes.NewBuffer(jsonData)
 
-	req, err := http.NewRequest("POST", baseURL, buf)
-	if err != nil {
-		return fmt.Errorf("ошибка создания запроса: %w", err)
-	}
+	var req *http.Request
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
+	if req, err = http.NewRequestWithContext(ctx, "POST", baseURL, buf); err != nil {
+		return fmt.Errorf("create request error: %w", err)
+	}
+
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Content-Encoding", "gzip")
 	req.Header.Set("Accept-Encoding", "gzip")
-	req = req.WithContext(ctx)
 
-	resp, err = sender.Do(req)
+	var resp *http.Response
+	if resp, err = sender.Do(req); err != nil {
+		return fmt.Errorf("sent metrics error: %w", err)
+	}
+
 	if resp != nil && resp.Body != nil {
 		if err := resp.Body.Close(); err != nil {
-			return fmt.Errorf("ошибка закрытия тела запроса %w", err)
+			return fmt.Errorf("body close error: %w", err)
 		}
 	}
 
-	if err != nil {
-		return fmt.Errorf("ошибка отправки метрик: %v", err)
-	}
 	if resp.StatusCode != 200 {
-		return fmt.Errorf("ошибка отправки метрик: %v", resp.Status)
+		return fmt.Errorf("sent metrics error status: %s", resp.Status)
 	}
 
 	return nil

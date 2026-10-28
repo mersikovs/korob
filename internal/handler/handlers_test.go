@@ -94,7 +94,7 @@ func TestUpdateMetric(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			request := httptest.NewRequest(http.MethodPost, test.path, nil)
+			request := httptest.NewRequestWithContext(context.Background(), http.MethodPost, test.path, nil)
 
 			w := httptest.NewRecorder()
 

@@ -1,6 +1,7 @@
 package middleware_test
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -111,7 +112,7 @@ func TestLogger(t *testing.T) {
 				})
 
 				wrapped := middleware.Logger(log)(handler)
-				req := httptest.NewRequest(testreq.method, testreq.path, nil)
+				req := httptest.NewRequestWithContext(context.Background(), testreq.method, testreq.path, nil)
 				rr := httptest.NewRecorder()
 
 				wrapped.ServeHTTP(rr, req)
