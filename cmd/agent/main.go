@@ -2,6 +2,7 @@
 package main
 
 import (
+	"cmp"
 	"context"
 	"flag"
 	"fmt"
@@ -17,7 +18,18 @@ import (
 	"github.com/mersikovs/korob.git/internal/logger"
 )
 
+var (
+	BuildVersion, BuildDate, BuildCommit string
+)
+
 func main() {
+	fmt.Printf(
+		"Build version: %s\nBuild date: %s\nBuild commit: %s\n",
+		cmp.Or(BuildVersion, "N/A"),
+		cmp.Or(BuildDate, "N/A"),
+		cmp.Or(BuildCommit, "N/A"),
+	)
+
 	if err := run(context.Background()); err != nil {
 		fmt.Fprintln(os.Stderr, "Agent failed:", err)
 		//nolint:exitinmain // все defer выполнились в run, игнорируем
