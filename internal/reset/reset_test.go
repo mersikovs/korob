@@ -1,0 +1,254 @@
+package reset
+
+import (
+	"bytes"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+)
+
+// common func for test package reset - write*
+func writeTempFile(t *testing.T, root, rel, content string) string {
+	t.Helper()
+	p := filepath.Join(root, rel)
+	if err := os.MkdirAll(filepath.Dir(p), 0755); err != nil {
+		t.Fatalf("mkdir %s: %v", filepath.Dir(p), err)
+	}
+	if err := os.WriteFile(p, []byte(content), 0644); err != nil {
+		t.Fatalf("write %s: %v", p, err)
+	}
+	return p
+}
+
+func writeGoPackage(t *testing.T, root, rel, pkgName string) string {
+	t.Helper()
+	if pkgName == "" {
+		pkgName = "p" // разумный дефолт для заглушек
+	}
+	content := fmt.Sprintf("package %s\n", pkgName)
+	return writeTempFile(t, root, rel, content)
+}
+
+func writeGo(t *testing.T, root, rel string) string {
+	t.Helper()
+	return writeGoPackage(t, root, rel, "p")
+}
+
+func writeTempGo(t *testing.T, content string) string {
+	t.Helper()
+	return writeTempFile(t, t.TempDir(), "test.go", content)
+}
+
+type runFileCheck struct {
+	exists      bool
+	contains    []string
+	notContains []string
+	exactBytes  []byte
+}
+
+func TestRun(t *testing.T) {
+	tests := []struct {
+		name      string
+		setup     func(t *testing.T, root string)
+		wantErr   string
+		wantFiles map[string]runFileCheck
+	}{
+		{
+			name: "two_packages_each_generated",
+			setup: func(t *testing.T, root string) {
+				writeGoFile(t, root, "pkg/a/profile.go", resettableSrc("a", "Profile"))
+				writeGoFile(t, root, "pkg/b/session.go", resettableSrc("b", "Session"))
+			},
+			wantFiles: map[string]runFileCheck{
+				"pkg/a/reset.gen.go": {exists: true, contains: []string{"package a", "Profile"}},
+				"pkg/b/reset.gen.go": {exists: true, contains: []string{"package b", "Session"}},
+			},
+		},
+		{
+			name: "multiple_files_same_package_aggregated",
+			setup: func(t *testing.T, root string) {
+				writeGoFile(t, root, "pkg/a/a.go", resettableSrc("mypkg", "Alpha"))
+				writeGoFile(t, root, "pkg/a/b.go", resettableSrc("mypkg", "Beta"))
+			},
+			wantFiles: map[string]runFileCheck{
+				"pkg/a/reset.gen.go": {
+					exists:   true,
+					contains: []string{"package mypkg", "Alpha", "Beta"},
+				},
+			},
+		},
+		{
+			name: "test_files_skipped",
+			setup: func(t *testing.T, root string) {
+				writeGoFile(t, root, "pkg/a/only_test.go", resettableSrc("a", "TestOnly"))
+			},
+			wantFiles: map[string]runFileCheck{
+				"pkg/a/reset.gen.go": {exists: false},
+			},
+		},
+		{
+			name: "no_targets_no_file",
+			setup: func(t *testing.T, root string) {
+				writeGoFile(t, root, "pkg/a/plain.go", plainSrc("a"))
+			},
+			wantFiles: map[string]runFileCheck{
+				"pkg/a/reset.gen.go": {exists: false},
+			},
+		},
+		{
+			name:  "empty_root_no_error_no_file",
+			setup: func(t *testing.T, root string) {},
+			wantFiles: map[string]runFileCheck{
+				"reset.gen.go": {exists: false},
+			},
+		},
+		{
+			name: "stale_file_preserved",
+			setup: func(t *testing.T, root string) {
+				writeGoFile(t, root, "pkg/a/plain.go", plainSrc("a"))
+				writeTempFile(t, root, "pkg/a/reset.gen.go",
+					"package a\n\n// sentinel: stale from previous run\n")
+			},
+			wantFiles: map[string]runFileCheck{
+				"pkg/a/reset.gen.go": {
+					exists:     true,
+					exactBytes: []byte("package a\n\n// sentinel: stale from previous run\n"),
+				},
+			},
+		},
+		{
+			name: "interleaved_layout_both_types_in_one_file",
+			setup: func(t *testing.T, root string) {
+				writeGoFile(t, root, "a.go", resettableSrc("p", "Alpha"))
+				writeGoFile(t, root, "m/x.go", plainSrc("p"))
+				writeGoFile(t, root, "z.go", resettableSrc("p", "Zulu"))
+			},
+			wantFiles: map[string]runFileCheck{
+				"reset.gen.go":   {exists: true, contains: []string{"package p", "Alpha", "Zulu"}},
+				"m/reset.gen.go": {exists: false},
+			},
+		},
+		{
+			name: "parse_error_wrapped",
+			setup: func(t *testing.T, root string) {
+				writeGoFile(t, root, "pkg/a/broken.go", "package a\nfunc broken( {\n")
+			},
+			wantErr: "parse",
+			wantFiles: map[string]runFileCheck{
+				"pkg/a/reset.gen.go": {exists: false},
+			},
+		},
+		{
+			name: "generate_error_wrapped",
+			setup: func(t *testing.T, root string) {
+				writeGoFile(t, root, "pkg/a/profile.go", resettableSrc("a", "Profile"))
+				if err := os.MkdirAll(filepath.Join(root, "pkg/a/reset.gen.go"), 0755); err != nil {
+					t.Fatal(err)
+				}
+			},
+			wantErr: "package generate",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			root := t.TempDir()
+			resolved, err := filepath.EvalSymlinks(root)
+			if err != nil {
+				t.Fatalf("EvalSymlinks(%q): %v", root, err)
+			}
+			root = resolved
+
+			if tt.setup != nil {
+				tt.setup(t, root)
+			}
+
+			runErr := Run(root)
+
+			if tt.wantErr != "" {
+				if runErr == nil {
+					t.Fatalf("want error containing %q, got nil", tt.wantErr)
+				}
+				if !strings.Contains(runErr.Error(), tt.wantErr) {
+					t.Errorf("error %q does not contain %q", runErr, tt.wantErr)
+				}
+			} else if runErr != nil {
+				t.Fatalf("unexpected error: %v", runErr)
+			}
+
+			for rel, check := range tt.wantFiles {
+				assertRunFile(t, root, rel, check)
+			}
+		})
+	}
+}
+
+func resettableSrc(pkg, typeName string) string {
+	return "package " + pkg + "\n\n" +
+		"// generate:reset\n" +
+		"type " + typeName + " struct{ X int }\n\n" +
+		"func (s *" + typeName + ") Reset() { s.X = 0 }\n"
+}
+
+func plainSrc(pkg string) string {
+	return "package " + pkg + "\n\ntype Plain struct{ X int }\n"
+}
+
+func writeGoFile(t *testing.T, root, rel, content string) {
+	t.Helper()
+	writeTempFile(t, root, rel, content)
+}
+
+func assertRunFile(t *testing.T, root, rel string, check runFileCheck) {
+	t.Helper()
+
+	candidates := []string{filepath.Join(root, rel)}
+	if resolved, err := filepath.EvalSymlinks(root); err == nil && resolved != root {
+		candidates = append(candidates, filepath.Join(resolved, rel))
+	}
+
+	var (
+		got     []byte
+		foundAt string
+	)
+	for _, p := range candidates {
+		data, err := os.ReadFile(p)
+		if err == nil {
+			got, foundAt = data, p
+			break
+		}
+	}
+
+	if !check.exists {
+		if foundAt != "" {
+			t.Errorf("%s: must not exist; found at %s", rel, foundAt)
+		}
+		return
+	}
+
+	if foundAt == "" {
+		t.Errorf("%s: not found; tried %v", rel, candidates)
+		return
+	}
+
+	if check.exactBytes != nil {
+		if !bytes.Equal(got, check.exactBytes) {
+			t.Errorf("%s: content mismatch (found at %s):\n got: %q\nwant: %q",
+				rel, foundAt, got, check.exactBytes)
+		}
+		return
+	}
+
+	for _, s := range check.contains {
+		if !bytes.Contains(got, []byte(s)) {
+			t.Errorf("%s (found at %s): missing %q; got:\n%s", rel, foundAt, s, got)
+		}
+	}
+	for _, s := range check.notContains {
+		if bytes.Contains(got, []byte(s)) {
+			t.Errorf("%s (found at %s): must not contain %q; got:\n%s", rel, foundAt, s, got)
+		}
+	}
+}

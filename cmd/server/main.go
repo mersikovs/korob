@@ -42,7 +42,7 @@ func run(ctx context.Context) error {
 
 	var appLog logger.Logger
 	if appLog, err = logger.NewZap("info"); err != nil {
-		return fmt.Errorf("Failed to create logger: %w", err)
+		return fmt.Errorf("failed to create logger: %w", err)
 	}
 
 	appCtx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)

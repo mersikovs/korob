@@ -39,7 +39,7 @@ func run(ctx context.Context) error {
 
 	logger, err := logger.NewZap("info")
 	if err != nil {
-		return fmt.Errorf("Failed to create logger: %w", err)
+		return fmt.Errorf("failed to create logger: %w", err)
 	}
 
 	compression := transport.NewCompressTransport(
