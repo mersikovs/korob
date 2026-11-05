@@ -145,24 +145,22 @@ func int64PtrEqual(a, b *int64) bool {
 
 // PostMetricsBatch serializes a map of metrics into a JSON array and sends it
 func PostMetricsBatch(sender Sender, baseURL string, metrics map[string]models.Metrics) error {
-	var err error
-
 	metricsSlice := make([]models.Metrics, 0)
 	for _, v := range metrics {
 		metricsSlice = append(metricsSlice, v)
 	}
 
-	var jsonData []byte
-	if jsonData, err = json.Marshal(metricsSlice); err != nil {
+	jsonData, err := json.Marshal(metricsSlice)
+	if err != nil {
 		return fmt.Errorf("create json error: %w", err)
 	}
 
 	buf := bytes.NewBuffer(jsonData)
 
-	var req *http.Request
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	if req, err = http.NewRequestWithContext(ctx, "POST", baseURL, buf); err != nil {
+	req, err := http.NewRequestWithContext(ctx, "POST", baseURL, buf)
+	if err != nil {
 		return fmt.Errorf("create request error: %w", err)
 	}
 
@@ -170,10 +168,11 @@ func PostMetricsBatch(sender Sender, baseURL string, metrics map[string]models.M
 	req.Header.Set("Content-Encoding", "gzip")
 	req.Header.Set("Accept-Encoding", "gzip")
 
-	var resp *http.Response
-	if resp, err = sender.Do(req); err != nil {
+	resp, err := sender.Do(req)
+	if err != nil {
 		return fmt.Errorf("sent metrics error: %w", err)
 	}
+	defer resp.Body.Close()
 
 	if resp != nil && resp.Body != nil {
 		if err := resp.Body.Close(); err != nil {
@@ -181,7 +180,7 @@ func PostMetricsBatch(sender Sender, baseURL string, metrics map[string]models.M
 		}
 	}
 
-	if resp.StatusCode != 200 {
+	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("sent metrics error status: %s", resp.Status)
 	}
 

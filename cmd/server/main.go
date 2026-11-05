@@ -4,6 +4,7 @@ package main
 import (
 	"cmp"
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -18,7 +19,6 @@ import (
 	"github.com/mersikovs/korob.git/internal/config"
 	"github.com/mersikovs/korob.git/internal/database"
 	"github.com/mersikovs/korob.git/internal/logger"
-	models "github.com/mersikovs/korob.git/internal/model"
 	"github.com/mersikovs/korob.git/internal/repository"
 	"github.com/mersikovs/korob.git/internal/router"
 	"github.com/mersikovs/korob.git/internal/service"
@@ -45,14 +45,13 @@ func main() {
 func run(ctx context.Context) error {
 	fs := flag.NewFlagSet("server", flag.ContinueOnError)
 
-	var err error
-	var cnf *models.ServerConfig
-	if cnf, err = config.ServerParseConfig(fs, os.Args[1:], config.OSenv{}); err != nil {
+	cnf, err := config.ServerParseConfig(fs, os.Args[1:], config.OSenv{})
+	if err != nil {
 		return fmt.Errorf("failed to parse command-line and environment parameters: %w", err)
 	}
 
-	var appLog logger.Logger
-	if appLog, err = logger.NewZap("info"); err != nil {
+	appLog, err := logger.NewZap("info")
+	if err != nil {
 		return fmt.Errorf("failed to create logger: %w", err)
 	}
 
@@ -60,13 +59,13 @@ func run(ctx context.Context) error {
 	defer stop()
 
 	if cnf.DatabaseDSN != "" {
-		if err = database.MigrateUp(cnf.DatabaseDSN, "file://migrations"); err != nil {
-			return fmt.Errorf("database migration failed: %w", err)
+		if migrationErr := database.MigrateUp(cnf.DatabaseDSN, "file://migrations"); migrationErr != nil {
+			return fmt.Errorf("database migration failed: %w", migrationErr)
 		}
 	}
 
-	var storage repository.Storage
-	if storage, err = repository.NewStorage(appCtx, cnf, appLog); err != nil {
+	storage, err := repository.NewStorage(appCtx, cnf, appLog)
+	if err != nil {
 		return fmt.Errorf("failed to initialize storage: %w", err)
 	}
 
@@ -84,8 +83,8 @@ func run(ctx context.Context) error {
 		dispatcher = audit.NewDispatcher(500, 8, appLog)
 
 		if cnf.AuditFile != "" {
-			var fileObs *audit.FileObserver
-			if fileObs, err = audit.NewFileObserver(cnf.AuditFile, cnf.AuditFile, appLog); err != nil {
+			fileObs, err := audit.NewFileObserver(cnf.AuditFile, cnf.AuditFile, appLog)
+			if err != nil {
 				return fmt.Errorf("file audit failed: %w", err)
 			}
 			dispatcher.Register(fileObs)
@@ -105,7 +104,8 @@ func run(ctx context.Context) error {
 
 	cacher := cache.NewNoopCache()
 	if cnf.CacheTTLSec > 0 {
-		cacher = cache.NewGoCache(time.Duration(cnf.CacheTTLSec*int(time.Second)), 2*time.Duration(cnf.CacheTTLSec*int(time.Second)))
+		ttl := time.Duration(cnf.CacheTTLSec) * time.Second
+		cacher = cache.NewGoCache(ttl, 2*ttl)
 	}
 
 	service := service.NewMetricService(storage, cacher, appLog)
@@ -120,46 +120,56 @@ func run(ctx context.Context) error {
 
 	errCh := make(chan error, 1)
 	go func() {
-		err = srv.ListenAndServe()
-		if err != nil && err != http.ErrServerClosed {
-			errCh <- err
+		if serverErr := srv.ListenAndServe(); serverErr != nil && !errors.Is(serverErr, http.ErrServerClosed) {
+			errCh <- serverErr
 		}
 	}()
 
+	var serverErr error
 	select {
 	case <-appCtx.Done():
 		appLog.Info("Graceful shutdown...")
-	case err = <-errCh:
-		appLog.Info("Server error detected, initiating shutdown", "error", err)
+	case serverErr = <-errCh:
+		appLog.Info("Server error detected, initiating shutdown", "error", serverErr)
 	}
 
 	httpShutdownCtx, httpCancel := context.WithTimeout(context.Background(), 30*time.Second)
-	err = srv.Shutdown(httpShutdownCtx)
+	shutdownErr := srv.Shutdown(httpShutdownCtx)
 	httpCancel()
-	if err != nil {
-		appLog.Info("Graceful shutdown of HTTP server failed", "error", err)
+	if shutdownErr != nil {
+		appLog.Info("Graceful shutdown of HTTP server failed", "error", shutdownErr)
 	} else {
 		appLog.Info("HTTP server shut down successfully")
 	}
 
+	var errs []error
+	if serverErr != nil {
+		errs = append(errs, serverErr)
+	}
+	if shutdownErr != nil {
+		errs = append(errs, shutdownErr)
+	}
+
 	if dispatcher != nil {
 		dispatcherCtx, dispatcherCancel := context.WithTimeout(context.Background(), 30*time.Second)
-		err = dispatcher.Shutdown(dispatcherCtx)
+		dispatcherErr := dispatcher.Shutdown(dispatcherCtx)
 		dispatcherCancel()
-		if err != nil {
-			appLog.Info("dispatcher shutdown completed with errors", "error", err)
+		if dispatcherErr != nil {
+			appLog.Info("dispatcher shutdown completed with errors", "error", dispatcherErr)
+			errs = append(errs, dispatcherErr)
 		} else {
 			appLog.Info("dispatcher shut down successfully")
 		}
 	}
 
 	if closer, ok := storage.(io.Closer); ok {
-		if err = closer.Close(); err != nil {
-			appLog.Info("Failed to close storage", "error", err)
+		if closerErr := closer.Close(); closerErr != nil {
+			appLog.Info("Failed to close storage", "error", closerErr)
+			errs = append(errs, closerErr)
 		} else {
 			appLog.Info("Storage closed successfully")
 		}
 	}
 
-	return err
+	return errors.Join(errs...)
 }

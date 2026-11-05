@@ -9,6 +9,7 @@ import (
 	"strings"
 )
 
+// scanPackages it sequentially traverses the directories.
 func scanPackages(root string, visit func(dir string, files []string) error) error {
 	abs, err := filepath.Abs(root)
 	if err != nil {
