@@ -2,7 +2,9 @@
 package main
 
 import (
+	"cmp"
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -22,42 +24,68 @@ import (
 	"github.com/mersikovs/korob.git/internal/service"
 )
 
-func main() {
-	fs := flag.NewFlagSet("server", flag.ContinueOnError)
-	cnf, err := config.ServerParseConfig(fs, os.Args[1:], config.OSenv{})
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "Failed to parse command-line and environment parameters:", err)
-		os.Exit(2)
-	}
+var (
+	BuildVersion, BuildDate, BuildCommit string
+)
 
-	logger, err := logger.NewZap("info")
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "Failed to create logger:", err)
+func main() {
+	fmt.Printf(
+		"Build version: %s\nBuild date: %s\nBuild commit: %s\n",
+		cmp.Or(BuildVersion, "N/A"),
+		cmp.Or(BuildDate, "N/A"),
+		cmp.Or(BuildCommit, "N/A"),
+	)
+	if err := run(context.Background()); err != nil {
+		fmt.Fprintln(os.Stderr, "Application failed:", err)
+		//nolint:exitinmain // все defer выполнились в run, игнорируем
 		os.Exit(1)
 	}
+}
 
-	appCtx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+func run(ctx context.Context) error {
+	fs := flag.NewFlagSet("server", flag.ContinueOnError)
+
+	cnf, err := config.ServerParseConfig(fs, os.Args[1:], config.OSenv{})
+	if err != nil {
+		return fmt.Errorf("failed to parse command-line and environment parameters: %w", err)
+	}
+
+	appLog, err := logger.NewZap("info")
+	if err != nil {
+		return fmt.Errorf("failed to create logger: %w", err)
+	}
+
+	appCtx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
 	if cnf.DatabaseDSN != "" {
-		if err := database.MigrateUp(cnf.DatabaseDSN, "file://migrations"); err != nil {
-			logger.Fatal("Database migration failed", "error", err)
+		if migrationErr := database.MigrateUp(cnf.DatabaseDSN, "file://migrations"); migrationErr != nil {
+			return fmt.Errorf("database migration failed: %w", migrationErr)
 		}
 	}
 
-	storage, err := repository.NewStorage(appCtx, cnf, logger)
+	storage, err := repository.NewStorage(appCtx, cnf, appLog)
 	if err != nil {
-		logger.Fatal("Failed to initialize storage", "error", err)
+		return fmt.Errorf("failed to initialize storage: %w", err)
 	}
+
+	cleanupStorage := true
+	defer func() {
+		if cleanupStorage {
+			if closer, ok := storage.(io.Closer); ok {
+				appLog.Info("Cleaning up storage due to initialization error", "error", closer.Close())
+			}
+		}
+	}()
 
 	var dispatcher *audit.Dispatcher
 	if cnf.AuditFile != "" || cnf.AuditURL != "" {
-		dispatcher = audit.NewDispatcher(500, 8, logger)
+		dispatcher = audit.NewDispatcher(500, 8, appLog)
 
 		if cnf.AuditFile != "" {
-			fileObs, err := audit.NewFileObserver(cnf.AuditFile, cnf.AuditFile, logger)
+			fileObs, err := audit.NewFileObserver(cnf.AuditFile, cnf.AuditFile, appLog)
 			if err != nil {
-				logger.Fatal("File audit failed", "error", err)
+				return fmt.Errorf("file audit failed: %w", err)
 			}
 			dispatcher.Register(fileObs)
 		}
@@ -66,7 +94,7 @@ func main() {
 			remoteObs := audit.NewRemoteObserver(
 				cnf.AuditURL,
 				cnf.AuditURL,
-				logger,
+				appLog,
 			)
 			dispatcher.Register(remoteObs)
 		}
@@ -76,48 +104,72 @@ func main() {
 
 	cacher := cache.NewNoopCache()
 	if cnf.CacheTTLSec > 0 {
-		cacher = cache.NewGoCache(time.Duration(cnf.CacheTTLSec*int(time.Second)), 2*time.Duration(cnf.CacheTTLSec*int(time.Second)))
+		ttl := time.Duration(cnf.CacheTTLSec) * time.Second
+		cacher = cache.NewGoCache(ttl, 2*ttl)
 	}
 
-	service := service.NewMetricService(storage, cacher, logger)
-	router := router.NewRouter(service, dispatcher, logger, cnf.Key)
+	service := service.NewMetricService(storage, cacher, appLog)
+	router := router.NewRouter(service, dispatcher, appLog, cnf.Key)
 
 	srv := &http.Server{
 		Addr:    cnf.Address,
 		Handler: router,
 	}
 
+	cleanupStorage = false
+
+	errCh := make(chan error, 1)
 	go func() {
-		err = srv.ListenAndServe()
-		if err != nil && err != http.ErrServerClosed {
-			logger.Fatal("The web server failed to start", "error", err)
+		if serverErr := srv.ListenAndServe(); serverErr != nil && !errors.Is(serverErr, http.ErrServerClosed) {
+			errCh <- serverErr
 		}
 	}()
 
-	<-appCtx.Done()
-	logger.Info("Graceful shutdown...")
+	var serverErr error
+	select {
+	case <-appCtx.Done():
+		appLog.Info("Graceful shutdown...")
+	case serverErr = <-errCh:
+		appLog.Info("Server error detected, initiating shutdown", "error", serverErr)
+	}
 
 	httpShutdownCtx, httpCancel := context.WithTimeout(context.Background(), 30*time.Second)
-	if err := srv.Shutdown(httpShutdownCtx); err != nil {
-		logger.Info("Graceful shutdown of HTTP server failed", "error", err)
-	}
+	shutdownErr := srv.Shutdown(httpShutdownCtx)
 	httpCancel()
+	if shutdownErr != nil {
+		appLog.Info("Graceful shutdown of HTTP server failed", "error", shutdownErr)
+	} else {
+		appLog.Info("HTTP server shut down successfully")
+	}
+
+	var errs []error
+	if serverErr != nil {
+		errs = append(errs, serverErr)
+	}
+	if shutdownErr != nil {
+		errs = append(errs, shutdownErr)
+	}
 
 	if dispatcher != nil {
 		dispatcherCtx, dispatcherCancel := context.WithTimeout(context.Background(), 30*time.Second)
-		if err := dispatcher.Shutdown(dispatcherCtx); err != nil {
-			logger.Info("dispatcher shutdown completed with errors", "error", err)
-		}
-		logger.Info("dispatcher shut down successfully")
+		dispatcherErr := dispatcher.Shutdown(dispatcherCtx)
 		dispatcherCancel()
+		if dispatcherErr != nil {
+			appLog.Info("dispatcher shutdown completed with errors", "error", dispatcherErr)
+			errs = append(errs, dispatcherErr)
+		} else {
+			appLog.Info("dispatcher shut down successfully")
+		}
 	}
 
 	if closer, ok := storage.(io.Closer); ok {
-		defer func() {
-			if err := closer.Close(); err != nil {
-				logger.Info("Failed to close storage", "error", err)
-			}
-		}()
+		if closerErr := closer.Close(); closerErr != nil {
+			appLog.Info("Failed to close storage", "error", closerErr)
+			errs = append(errs, closerErr)
+		} else {
+			appLog.Info("Storage closed successfully")
+		}
 	}
 
+	return errors.Join(errs...)
 }
