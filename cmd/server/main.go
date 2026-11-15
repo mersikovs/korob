@@ -69,7 +69,7 @@ func run(ctx context.Context) error {
 	var privateKey *hpke.PrivateKey
 	if cnf.CryptoKey != "" {
 		pk, privateKeyErr := crypt.LoadPrivateKey(cnf.CryptoKey)
-		if err != nil {
+		if privateKeyErr != nil {
 			return fmt.Errorf("config error: load private key: %w", privateKeyErr)
 		}
 		privateKey = &pk
