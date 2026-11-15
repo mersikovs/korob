@@ -49,6 +49,8 @@ type ServerConfig struct {
 	Restore bool
 	// StoreInterval is the period in seconds for saving metrics to FileStoragePath.
 	StoreInterval int
+	// CryptoKey is the local file path for crypto key.
+	CryptoKey string
 }
 
 // ValidateMetricType reports whether metricType is a known metric type

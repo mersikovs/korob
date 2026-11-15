@@ -29,7 +29,7 @@ func TestUpdateMetric(t *testing.T) {
 	modelStorage, _ := repository.NewStorage(ctx, &cnf, logger)
 	noopCache := cache.NewNoopCache()
 	service := service.NewMetricService(modelStorage, noopCache, logger)
-	router := router.NewRouter(service, nil, logger, nil)
+	router := router.NewRouter(service, nil, logger, nil, nil)
 
 	type want struct {
 		code        int

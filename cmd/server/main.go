@@ -4,6 +4,7 @@ package main
 import (
 	"cmp"
 	"context"
+	"crypto/hpke"
 	"errors"
 	"flag"
 	"fmt"
@@ -17,6 +18,7 @@ import (
 	"github.com/mersikovs/korob.git/internal/audit"
 	"github.com/mersikovs/korob.git/internal/cache"
 	"github.com/mersikovs/korob.git/internal/config"
+	"github.com/mersikovs/korob.git/internal/crypt"
 	"github.com/mersikovs/korob.git/internal/database"
 	"github.com/mersikovs/korob.git/internal/logger"
 	"github.com/mersikovs/korob.git/internal/repository"
@@ -64,6 +66,15 @@ func run(ctx context.Context) error {
 		}
 	}
 
+	var privateKey *hpke.PrivateKey
+	if cnf.CryptoKey != "" {
+		pk, privateKeyErr := crypt.LoadPrivateKey(cnf.CryptoKey)
+		if err != nil {
+			return fmt.Errorf("config error: load private key: %w", privateKeyErr)
+		}
+		privateKey = &pk
+	}
+
 	storage, err := repository.NewStorage(appCtx, cnf, appLog)
 	if err != nil {
 		return fmt.Errorf("failed to initialize storage: %w", err)
@@ -109,7 +120,7 @@ func run(ctx context.Context) error {
 	}
 
 	service := service.NewMetricService(storage, cacher, appLog)
-	router := router.NewRouter(service, dispatcher, appLog, cnf.Key)
+	router := router.NewRouter(service, dispatcher, appLog, cnf.Key, privateKey)
 
 	srv := &http.Server{
 		Addr:    cnf.Address,

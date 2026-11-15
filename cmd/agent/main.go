@@ -4,6 +4,7 @@ package main
 import (
 	"cmp"
 	"context"
+	"crypto/hpke"
 	"flag"
 	"fmt"
 	"net/http"
@@ -15,6 +16,7 @@ import (
 	"github.com/mersikovs/korob.git/internal/agent"
 	"github.com/mersikovs/korob.git/internal/agent/transport"
 	"github.com/mersikovs/korob.git/internal/config"
+	"github.com/mersikovs/korob.git/internal/crypt"
 	"github.com/mersikovs/korob.git/internal/logger"
 )
 
@@ -54,8 +56,23 @@ func run(ctx context.Context) error {
 		return fmt.Errorf("failed to create logger: %w", err)
 	}
 
+	var publicKey *hpke.PublicKey
+	if cnf.CryptoKey != "" {
+		pk, loadKeyErr := crypt.LoadPublicKey(cnf.CryptoKey)
+		if loadKeyErr != nil {
+			return fmt.Errorf("failed to load public key: %w", err)
+		}
+		publicKey = &pk
+	}
+
+	var baseRT http.RoundTripper = http.DefaultTransport
+
+	if publicKey != nil {
+		baseRT = transport.NewEncryptingTransport(baseRT, *publicKey)
+	}
+
 	compression := transport.NewCompressTransport(
-		http.DefaultTransport,
+		baseRT,
 		logger,
 	)
 

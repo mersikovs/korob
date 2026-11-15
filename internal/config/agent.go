@@ -21,6 +21,8 @@ type Config struct {
 	ReportInterval int
 	PollInterval   int
 	RateLimit      int
+	// CryptoKey is the local file path for crypto key.
+	CryptoKey string
 }
 
 // EnvSource abstracts environment variable access, allowing for testable
@@ -72,6 +74,7 @@ func Parse(fs *flag.FlagSet, args []string, env EnvSource) (*Config, error) {
 	key := ""
 	fs.StringVar(&cnf.Address, "a", defaultAddress, "адрес эндпоинта HTTP-сервера")
 	fs.StringVar(&key, "k", defaultKey, "ключ подписи данных")
+	fs.StringVar(&cnf.CryptoKey, "crypto-key", "", "путь к файлу, передайте путь до файла с публичным ключом")
 
 	cnf.ReportInterval = defaultReportInterval
 	fs.Func("r", "частота отправки метрик на сервер", positiveIntFlag(&cnf.ReportInterval))
@@ -92,6 +95,10 @@ func Parse(fs *flag.FlagSet, args []string, env EnvSource) (*Config, error) {
 
 	if envKey, exists := env.LookupEnv("KEY"); exists && envKey != "" {
 		key = envKey
+	}
+
+	if cryptoKey, exists := env.LookupEnv("CRYPTO_KEY"); exists && cryptoKey != "" {
+		cnf.CryptoKey = cryptoKey
 	}
 
 	if len(key) > 0 {

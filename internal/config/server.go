@@ -20,6 +20,7 @@ func ServerParseConfig(fs *flag.FlagSet, args []string, env EnvSource) (*models.
 	fs.IntVar(&cnf.StoreInterval, "i", 300, "интервал времени в секундах, по истечении которого текущие показания сервера сохраняются на диск")
 	fs.StringVar(&cnf.FileStoragePath, "f", "store.back", "путь до файла, куда сохраняются текущие значения")
 	fs.BoolVar(&cnf.Restore, "r", false, "следует ли загружать ранее сохранённые значения")
+	fs.StringVar(&cnf.CryptoKey, "crypto-key", "", "путь к файлу, передайте путь до файла с приватным ключом")
 
 	if err := fs.Parse(args); err != nil {
 		return nil, err
@@ -75,6 +76,10 @@ func ServerParseConfig(fs *flag.FlagSet, args []string, env EnvSource) (*models.
 		if r == "false" {
 			cnf.Restore = false
 		}
+	}
+
+	if cFile, exists := env.LookupEnv("CRYPTO_KEY"); exists && cFile != "" {
+		cnf.CryptoKey = cFile
 	}
 
 	return cnf, nil
