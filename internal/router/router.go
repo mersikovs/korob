@@ -17,7 +17,7 @@ import (
 )
 
 // NewRouter creates and configures a chi.Mux router for the metrics API.
-func NewRouter(service *service.MetricService, dispatcher *audit.Dispatcher, logger logger.Logger, signKey []byte, privateKey *hpke.PrivateKey) *chi.Mux {
+func NewRouter(service *service.MetricService, dispatcher *audit.Dispatcher, logger logger.Logger, signKey *string, privateKey *hpke.PrivateKey) *chi.Mux {
 	r := chi.NewRouter()
 
 	metricHandler := handler.NewMetricHandler(service, dispatcher, logger)
@@ -37,8 +37,8 @@ func NewRouter(service *service.MetricService, dispatcher *audit.Dispatcher, log
 	r.Use(middleware.GzipRequestMiddleware)
 
 	if signKey != nil {
-		r.Use(middleware.VerifySha256Middleware(signKey, logger))
-		r.Use(middleware.SignResponseMiddleware(signKey, logger))
+		r.Use(middleware.VerifySha256Middleware([]byte(*signKey), logger))
+		r.Use(middleware.SignResponseMiddleware([]byte(*signKey), logger))
 	} else {
 		r.Use(middleware.RejectUnsupported(
 			signing.HeaderName,

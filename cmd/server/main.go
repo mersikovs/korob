@@ -60,15 +60,15 @@ func run(ctx context.Context) error {
 	appCtx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	if cnf.DatabaseDSN != "" {
-		if migrationErr := database.MigrateUp(cnf.DatabaseDSN, "file://migrations"); migrationErr != nil {
+	if cnf.DatabaseDSN != nil {
+		if migrationErr := database.MigrateUp(*cnf.DatabaseDSN, "file://migrations"); migrationErr != nil {
 			return fmt.Errorf("database migration failed: %w", migrationErr)
 		}
 	}
 
 	var privateKey *hpke.PrivateKey
-	if cnf.CryptoKey != "" {
-		pk, privateKeyErr := crypt.LoadPrivateKey(cnf.CryptoKey)
+	if cnf.CryptoKey != nil {
+		pk, privateKeyErr := crypt.LoadPrivateKey(*cnf.CryptoKey)
 		if privateKeyErr != nil {
 			return fmt.Errorf("config error: load private key: %w", privateKeyErr)
 		}
@@ -90,21 +90,21 @@ func run(ctx context.Context) error {
 	}()
 
 	var dispatcher *audit.Dispatcher
-	if cnf.AuditFile != "" || cnf.AuditURL != "" {
+	if cnf.AuditFile != nil || cnf.AuditURL != nil {
 		dispatcher = audit.NewDispatcher(500, 8, appLog)
 
-		if cnf.AuditFile != "" {
-			fileObs, err := audit.NewFileObserver(cnf.AuditFile, cnf.AuditFile, appLog)
+		if cnf.AuditFile != nil {
+			fileObs, err := audit.NewFileObserver(*cnf.AuditFile, *cnf.AuditFile, appLog)
 			if err != nil {
 				return fmt.Errorf("file audit failed: %w", err)
 			}
 			dispatcher.Register(fileObs)
 		}
 
-		if cnf.AuditURL != "" {
+		if cnf.AuditURL != nil {
 			remoteObs := audit.NewRemoteObserver(
-				cnf.AuditURL,
-				cnf.AuditURL,
+				*cnf.AuditURL,
+				*cnf.AuditURL,
 				appLog,
 			)
 			dispatcher.Register(remoteObs)

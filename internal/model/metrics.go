@@ -28,31 +28,6 @@ type Metrics struct {
 	Hash string `json:"hash,omitempty"`
 }
 
-// ServerConfig holds the runtime configuration for the metrics server.
-type ServerConfig struct {
-	// Address is the network address to listen on
-	Address string
-	// AuditFile is the local file path for audit logging.
-	AuditFile string
-	// AuditURL is the remote HTTP endpoint for audit logging.
-	AuditURL string
-	// CacheTTLSec is the cache TTL in seconds (0 disables caching).
-	CacheTTLSec int
-	// Key is the secret key used for HMAC-SHA256 payload signing.
-	Key []byte
-	// DatabaseDSN is the PostgreSQL connection string.
-	// If empty, the server falls back to in-memory storage.
-	DatabaseDSN string
-	// FileStoragePath is the path for periodic file-based persistence.
-	FileStoragePath string
-	// Restore indicates whether to load metrics from FileStoragePath on startup.
-	Restore bool
-	// StoreInterval is the period in seconds for saving metrics to FileStoragePath.
-	StoreInterval int
-	// CryptoKey is the local file path for crypto key.
-	CryptoKey string
-}
-
 // ValidateMetricType reports whether metricType is a known metric type
 // according to [ValidMetricTypes].
 func ValidateMetricType(metricType string) bool {

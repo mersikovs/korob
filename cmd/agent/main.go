@@ -57,8 +57,8 @@ func run(ctx context.Context) error {
 	}
 
 	var publicKey *hpke.PublicKey
-	if cnf.CryptoKey != "" {
-		pk, loadKeyErr := crypt.LoadPublicKey(cnf.CryptoKey)
+	if cnf.CryptoKey != nil {
+		pk, loadKeyErr := crypt.LoadPublicKey(*cnf.CryptoKey)
 		if loadKeyErr != nil {
 			return fmt.Errorf("failed to load public key: %w", err)
 		}
@@ -78,7 +78,10 @@ func run(ctx context.Context) error {
 
 	t := &transport.SigningTransport{
 		Base: compression,
-		Key:  cnf.Key,
+	}
+
+	if cnf.Key != nil {
+		t.Key = []byte(*cnf.Key)
 	}
 
 	client := &http.Client{

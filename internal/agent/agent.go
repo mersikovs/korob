@@ -27,7 +27,6 @@ type Agent struct {
 	client Sender
 	logger logger.Logger
 
-	key            []byte
 	lastMetrics    map[string]models.Metrics
 	pollCount      int64
 	pollInterval   time.Duration
@@ -53,7 +52,6 @@ func NewAgent(cnf *config.Config, transport Sender, logger logger.Logger) *Agent
 		cnf:            cnf,
 		client:         transport,
 		logger:         logger,
-		key:            cnf.Key,
 		lastMetrics:    make(map[string]models.Metrics),
 		pollCount:      0,
 		maxWorkers:     cnf.RateLimit,

@@ -7,8 +7,8 @@ import (
 	"testing"
 
 	"github.com/mersikovs/korob.git/internal/cache"
+	"github.com/mersikovs/korob.git/internal/config"
 	"github.com/mersikovs/korob.git/internal/logger"
-	models "github.com/mersikovs/korob.git/internal/model"
 	"github.com/mersikovs/korob.git/internal/repository"
 	"github.com/mersikovs/korob.git/internal/router"
 	"github.com/mersikovs/korob.git/internal/service"
@@ -17,8 +17,8 @@ import (
 )
 
 func TestUpdateMetric(t *testing.T) {
-	cnf := models.ServerConfig{
-		DatabaseDSN:     "",
+	cnf := config.ServerConfig{
+		DatabaseDSN:     nil,
 		FileStoragePath: "test.back",
 	}
 	ctx := context.Background()
