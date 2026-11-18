@@ -40,6 +40,10 @@ func main() {
 }
 
 func run(ctx context.Context) error {
+
+	runCtx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM, syscall.SIGQUIT)
+	defer stop()
+
 	delays := []time.Duration{
 		1 * time.Second,
 		3 * time.Second,
@@ -89,25 +93,20 @@ func run(ctx context.Context) error {
 	}
 
 	retryClient := transport.New(client, delays)
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
 	agent := agent.NewAgent(cnf, retryClient, logger)
 	done := make(chan struct{})
 	go func() {
-		agent.Run(ctx)
+		agent.Run(runCtx)
 		close(done)
 	}()
 
 	logger.Info("Работаю... Нажми Ctrl+C для завершения")
 
-	// Ждём сигнал ОС (Ctrl+C или docker stop)
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+	<-runCtx.Done()
+	logger.Info("A termination signal has been received.")
 
-	<-sigChan // блокируем main до сигнала
-	cancel()
 	<-done
-	logger.Info("Завершено")
+	logger.Info("Done")
 
 	return nil
 }

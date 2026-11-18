@@ -57,7 +57,7 @@ func run(ctx context.Context) error {
 		return fmt.Errorf("failed to create logger: %w", err)
 	}
 
-	appCtx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
+	appCtx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM, syscall.SIGQUIT)
 	defer stop()
 
 	if cnf.DatabaseDSN != nil {
