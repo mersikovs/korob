@@ -4,6 +4,7 @@ package main
 import (
 	"cmp"
 	"context"
+	"crypto/hpke"
 	"errors"
 	"flag"
 	"fmt"
@@ -17,6 +18,7 @@ import (
 	"github.com/mersikovs/korob.git/internal/audit"
 	"github.com/mersikovs/korob.git/internal/cache"
 	"github.com/mersikovs/korob.git/internal/config"
+	"github.com/mersikovs/korob.git/internal/crypt"
 	"github.com/mersikovs/korob.git/internal/database"
 	"github.com/mersikovs/korob.git/internal/logger"
 	"github.com/mersikovs/korob.git/internal/repository"
@@ -55,13 +57,22 @@ func run(ctx context.Context) error {
 		return fmt.Errorf("failed to create logger: %w", err)
 	}
 
-	appCtx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
+	appCtx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM, syscall.SIGQUIT)
 	defer stop()
 
-	if cnf.DatabaseDSN != "" {
-		if migrationErr := database.MigrateUp(cnf.DatabaseDSN, "file://migrations"); migrationErr != nil {
+	if cnf.DatabaseDSN != nil {
+		if migrationErr := database.MigrateUp(*cnf.DatabaseDSN, "file://migrations"); migrationErr != nil {
 			return fmt.Errorf("database migration failed: %w", migrationErr)
 		}
+	}
+
+	var privateKey *hpke.PrivateKey
+	if cnf.CryptoKey != nil {
+		pk, privateKeyErr := crypt.LoadPrivateKey(*cnf.CryptoKey)
+		if privateKeyErr != nil {
+			return fmt.Errorf("config error: load private key: %w", privateKeyErr)
+		}
+		privateKey = &pk
 	}
 
 	storage, err := repository.NewStorage(appCtx, cnf, appLog)
@@ -79,21 +90,21 @@ func run(ctx context.Context) error {
 	}()
 
 	var dispatcher *audit.Dispatcher
-	if cnf.AuditFile != "" || cnf.AuditURL != "" {
+	if cnf.AuditFile != nil || cnf.AuditURL != nil {
 		dispatcher = audit.NewDispatcher(500, 8, appLog)
 
-		if cnf.AuditFile != "" {
-			fileObs, err := audit.NewFileObserver(cnf.AuditFile, cnf.AuditFile, appLog)
+		if cnf.AuditFile != nil {
+			fileObs, err := audit.NewFileObserver(*cnf.AuditFile, *cnf.AuditFile, appLog)
 			if err != nil {
 				return fmt.Errorf("file audit failed: %w", err)
 			}
 			dispatcher.Register(fileObs)
 		}
 
-		if cnf.AuditURL != "" {
+		if cnf.AuditURL != nil {
 			remoteObs := audit.NewRemoteObserver(
-				cnf.AuditURL,
-				cnf.AuditURL,
+				*cnf.AuditURL,
+				*cnf.AuditURL,
 				appLog,
 			)
 			dispatcher.Register(remoteObs)
@@ -109,7 +120,7 @@ func run(ctx context.Context) error {
 	}
 
 	service := service.NewMetricService(storage, cacher, appLog)
-	router := router.NewRouter(service, dispatcher, appLog, cnf.Key)
+	router := router.NewRouter(service, dispatcher, appLog, cnf.Key, privateKey)
 
 	srv := &http.Server{
 		Addr:    cnf.Address,

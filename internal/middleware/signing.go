@@ -10,7 +10,7 @@ import (
 	"github.com/mersikovs/korob.git/internal/signing"
 )
 
-const maxResponseSize = 1 * 1024 * 1024
+const maxBodySize = 1 * 1024 * 1024
 
 type responseCapture struct {
 	http.ResponseWriter
@@ -36,7 +36,7 @@ func (rw *responseCapture) Write(p []byte) (int, error) {
 		rw.WriteHeader(http.StatusOK)
 	}
 
-	if rw.buf.Len()+len(p) > maxResponseSize {
+	if rw.buf.Len()+len(p) > maxBodySize {
 		rw.isExceeded = true
 		return 0, errors.New("response size exceeds maximum allowed buffer limit")
 	}

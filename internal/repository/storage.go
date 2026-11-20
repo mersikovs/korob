@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 
+	"github.com/mersikovs/korob.git/internal/config"
 	"github.com/mersikovs/korob.git/internal/logger"
 	models "github.com/mersikovs/korob.git/internal/model"
 )
@@ -17,12 +18,12 @@ type Storage interface {
 
 // NewStorage returns a [Storage] implementation.
 //
-// It connects to PostgreSQL if [models.ServerConfig.DatabaseDSN] is provided,
+// It connects to PostgreSQL if [config.ServerConfig.DatabaseDSN] is provided,
 // otherwise it falls back to an in-memory storage.
 // Returns an error only on PostgreSQL connection failure.
-func NewStorage(ctx context.Context, cnf *models.ServerConfig, logger logger.Logger) (Storage, error) {
-	if cnf.DatabaseDSN != "" {
-		return NewPgStorage(ctx, cnf.DatabaseDSN, logger)
+func NewStorage(ctx context.Context, cnf *config.ServerConfig, logger logger.Logger) (Storage, error) {
+	if cnf.DatabaseDSN != nil {
+		return NewPgStorage(ctx, *cnf.DatabaseDSN, logger)
 	}
 
 	return NewMemoryStorage(ctx, cnf, logger)

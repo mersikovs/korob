@@ -4,6 +4,7 @@ package main
 import (
 	"cmp"
 	"context"
+	"crypto/hpke"
 	"flag"
 	"fmt"
 	"net/http"
@@ -15,6 +16,7 @@ import (
 	"github.com/mersikovs/korob.git/internal/agent"
 	"github.com/mersikovs/korob.git/internal/agent/transport"
 	"github.com/mersikovs/korob.git/internal/config"
+	"github.com/mersikovs/korob.git/internal/crypt"
 	"github.com/mersikovs/korob.git/internal/logger"
 )
 
@@ -38,13 +40,17 @@ func main() {
 }
 
 func run(ctx context.Context) error {
+
+	runCtx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM, syscall.SIGQUIT)
+	defer stop()
+
 	delays := []time.Duration{
 		1 * time.Second,
 		3 * time.Second,
 		5 * time.Second,
 	}
 	fs := flag.NewFlagSet("agent", flag.ContinueOnError)
-	cnf, err := config.Parse(fs, os.Args[1:], config.OSenv{})
+	cnf, err := config.AgentParseConfig(fs, os.Args[1:], config.OSenv{})
 	if err != nil {
 		return fmt.Errorf("failed to parse command-line and environment parameters: %w", err)
 	}
@@ -54,14 +60,32 @@ func run(ctx context.Context) error {
 		return fmt.Errorf("failed to create logger: %w", err)
 	}
 
+	var publicKey *hpke.PublicKey
+	if cnf.CryptoKey != nil {
+		pk, loadKeyErr := crypt.LoadPublicKey(*cnf.CryptoKey)
+		if loadKeyErr != nil {
+			return fmt.Errorf("failed to load public key: %w", loadKeyErr)
+		}
+		publicKey = &pk
+	}
+
+	var baseRT http.RoundTripper = http.DefaultTransport
+
+	if publicKey != nil {
+		baseRT = transport.NewEncryptingTransport(baseRT, *publicKey)
+	}
+
 	compression := transport.NewCompressTransport(
-		http.DefaultTransport,
+		baseRT,
 		logger,
 	)
 
 	t := &transport.SigningTransport{
 		Base: compression,
-		Key:  cnf.Key,
+	}
+
+	if cnf.Key != nil {
+		t.Key = []byte(*cnf.Key)
 	}
 
 	client := &http.Client{
@@ -69,25 +93,20 @@ func run(ctx context.Context) error {
 	}
 
 	retryClient := transport.New(client, delays)
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
 	agent := agent.NewAgent(cnf, retryClient, logger)
 	done := make(chan struct{})
 	go func() {
-		agent.Run(ctx)
+		agent.Run(runCtx)
 		close(done)
 	}()
 
 	logger.Info("Работаю... Нажми Ctrl+C для завершения")
 
-	// Ждём сигнал ОС (Ctrl+C или docker stop)
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+	<-runCtx.Done()
+	logger.Info("A termination signal has been received.")
 
-	<-sigChan // блокируем main до сигнала
-	cancel()
 	<-done
-	logger.Info("Завершено")
+	logger.Info("Done")
 
 	return nil
 }

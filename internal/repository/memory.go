@@ -9,6 +9,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/mersikovs/korob.git/internal/config"
 	"github.com/mersikovs/korob.git/internal/logger"
 	models "github.com/mersikovs/korob.git/internal/model"
 )
@@ -24,7 +25,7 @@ type MemoryStorage struct {
 }
 
 // NewMemoryStorage creates an in-memory storage
-func NewMemoryStorage(ctx context.Context, cnf *models.ServerConfig, logger logger.Logger) (*MemoryStorage, error) {
+func NewMemoryStorage(ctx context.Context, cnf *config.ServerConfig, logger logger.Logger) (*MemoryStorage, error) {
 	ms := MemoryStorage{
 		Metrics:  make(map[string]map[string]models.Metrics),
 		filePath: cnf.FileStoragePath,
