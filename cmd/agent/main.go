@@ -50,7 +50,7 @@ func run(ctx context.Context) error {
 		5 * time.Second,
 	}
 	fs := flag.NewFlagSet("agent", flag.ContinueOnError)
-	cnf, err := config.Parse(fs, os.Args[1:], config.OSenv{})
+	cnf, err := config.AgentParseConfig(fs, os.Args[1:], config.OSenv{})
 	if err != nil {
 		return fmt.Errorf("failed to parse command-line and environment parameters: %w", err)
 	}
@@ -64,7 +64,7 @@ func run(ctx context.Context) error {
 	if cnf.CryptoKey != nil {
 		pk, loadKeyErr := crypt.LoadPublicKey(*cnf.CryptoKey)
 		if loadKeyErr != nil {
-			return fmt.Errorf("failed to load public key: %w", err)
+			return fmt.Errorf("failed to load public key: %w", loadKeyErr)
 		}
 		publicKey = &pk
 	}

@@ -20,7 +20,7 @@ func (f FakeEnv) LookupEnv(key string) (string, bool) {
 	return value, exists
 }
 
-func TestParse(t *testing.T) {
+func TestAgentParseConfig(t *testing.T) {
 	tests := []struct {
 		name     string
 		args     []string
@@ -488,7 +488,7 @@ func TestParse(t *testing.T) {
 			fs := flag.NewFlagSet("agent_test", flag.ContinueOnError)
 			fs.SetOutput(io.Discard)
 
-			got, err := config.Parse(fs, args, env)
+			got, err := config.AgentParseConfig(fs, args, env)
 
 			if tt.wantErr != "" {
 				require.Error(t, err)

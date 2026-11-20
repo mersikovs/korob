@@ -46,7 +46,7 @@ func (e OSenv) LookupEnv(key string) (string, bool) {
 // Parse builds a Config by merging command-line flags and environment variables,
 // with environment variables taking precedence. It also validates that interval
 // and rate limit values are positive integers.
-func Parse(fs *flag.FlagSet, args []string, env EnvSource) (*Config, error) {
+func AgentParseConfig(fs *flag.FlagSet, args []string, env EnvSource) (*Config, error) {
 	cnf := &Config{
 		Address:        defaultAddress,
 		ReportInterval: defaultReportInterval,
